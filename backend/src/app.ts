@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes";
+import datasetRoutes from "./routes/dataset.routes";
 
 const app = express();
 
@@ -31,5 +32,6 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/datasets", datasetRoutes);
 
 export default app;
