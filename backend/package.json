@@ -7,6 +7,7 @@
     "predev": "prisma generate",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "test": "tsx --test src/utils/dataset.query.test.ts src/routes/dataset.routes.test.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {

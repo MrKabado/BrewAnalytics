@@ -1,7 +1,10 @@
 import { Router, type ErrorRequestHandler } from "express";
 import multer from "multer";
 import {
+  getDatasetDetails,
+  listDatasetRecords,
   listDatasets,
+  removeDataset,
   uploadDataset,
 } from "../controllers/dataset.controller";
 import { requireAuth } from "../middlewares/auth.middleware";
@@ -48,5 +51,8 @@ router.post(
   uploadDataset
 );
 router.get("/", requireAuth, listDatasets);
+router.get("/:id/records", requireAuth, listDatasetRecords);
+router.get("/:id", requireAuth, getDatasetDetails);
+router.delete("/:id", requireAuth, removeDataset);
 
 export default router;
