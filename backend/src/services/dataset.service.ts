@@ -88,7 +88,7 @@ function parseAmount(value: string, field: string, rowNumber: number): string {
 
 function validateRows(rows: SalesCsvRow[]) {
   if (rows.length === 0) {
-    throw new DatasetValidationError("The CSV file contains no sales records.");
+    throw new DatasetValidationError("The uploaded file contains no sales records.");
   }
 
   return rows.map((row, index) => {

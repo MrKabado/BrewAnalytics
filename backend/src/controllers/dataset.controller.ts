@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
+import path from "node:path";
 import { CsvParseError, parseSalesCsv } from "../utils/csv.parser";
+import { ExcelParseError, parseSalesExcel } from "../utils/excel.parser";
 import {
   createDatasetFromCsv,
   deleteDataset,
@@ -31,13 +33,16 @@ export async function uploadDataset(req: Request, res: Response) {
   if (!req.file) {
     return res.status(400).json({
       status: "error",
-      message: "A CSV file is required in the 'file' field.",
+      message: "A CSV or Excel file is required in the 'file' field.",
     });
   }
 
   try {
-    const csv = req.file.buffer.toString("utf8");
-    const rows = parseSalesCsv(csv);
+    const extension = path.extname(req.file.originalname).toLowerCase();
+    const rows =
+      extension === ".csv"
+        ? parseSalesCsv(req.file.buffer.toString("utf8"))
+        : parseSalesExcel(req.file.buffer, req.file.originalname);
     const dataset = await createDatasetFromCsv(req.file.originalname, rows);
 
     return res.status(201).json({
@@ -46,7 +51,11 @@ export async function uploadDataset(req: Request, res: Response) {
       dataset,
     });
   } catch (error) {
-    if (error instanceof CsvParseError || error instanceof DatasetValidationError) {
+    if (
+      error instanceof CsvParseError ||
+      error instanceof ExcelParseError ||
+      error instanceof DatasetValidationError
+    ) {
       return res.status(400).json({
         status: "error",
         message: error.message,

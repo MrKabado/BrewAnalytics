@@ -7,7 +7,7 @@
     "predev": "prisma generate",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "test": "tsx --test src/utils/dataset.query.test.ts src/routes/dataset.routes.test.ts",
+    "test": "tsx --test src/utils/dataset.query.test.ts src/routes/dataset.routes.test.ts src/utils/excel.parser.test.ts src/routes/upload.middleware.test.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "nodemailer": "^10.1.7",
     "papaparse": "^5.7.0",
     "pg": "^8.23.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.6.7"
   },
   "devDependencies": {
