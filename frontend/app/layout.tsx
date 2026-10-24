@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
+import type { Metadata } from "next"
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'})
 
@@ -10,6 +11,11 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: "BrewAnalytics | Sales intelligence",
+  description: "Sales analytics and business intelligence for coffee shops.",
+}
 
 export default function RootLayout({
   children,
