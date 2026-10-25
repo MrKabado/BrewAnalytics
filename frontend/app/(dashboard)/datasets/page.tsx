@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { EmptyState, PageHeading, Panel } from "@/components/analytics/analytics-ui"
+import { useAnalyticsScope } from "@/components/analytics/analytics-scope"
 import { deleteDataset, listDatasets, uploadDataset } from "@/lib/dataset-service"
 import type { Dataset } from "@/lib/dataset-types"
 
@@ -37,6 +38,7 @@ function errorMessage(error: unknown) {
 }
 
 export default function DatasetsPage() {
+  const { refreshDatasets } = useAnalyticsScope()
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
@@ -138,6 +140,7 @@ export default function DatasetsPage() {
       setPage(1)
       setLoading(true)
       setReloadKey((key) => key + 1)
+      refreshDatasets()
     } catch (error) {
       const message = errorMessage(error)
       setDialogError(message)
@@ -157,6 +160,7 @@ export default function DatasetsPage() {
       setDialog(null)
       setSelectedDataset(null)
       setLoading(true)
+      refreshDatasets()
       if (datasets.length === 1 && page > 1) {
         setPage((current) => current - 1)
       } else {

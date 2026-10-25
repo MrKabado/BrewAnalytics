@@ -224,16 +224,19 @@ export async function getSalesTrends(filters: SalesTrendFilters) {
       ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
       : Prisma.empty;
   const dateFormat = filters.aggregation === "monthly" ? "YYYY-MM" : "YYYY-MM-DD";
-  const truncUnit = filters.aggregation === "monthly" ? "month" : "day";
+  const truncatedDate =
+    filters.aggregation === "monthly"
+      ? Prisma.sql`DATE_TRUNC('month', "saleDate")`
+      : Prisma.sql`DATE_TRUNC('day', "saleDate")`;
   const rows = await prisma.$queryRaw<TrendRow[]>(Prisma.sql`
     SELECT
-      TO_CHAR(DATE_TRUNC(${truncUnit}, "saleDate"), ${dateFormat}) AS "period",
+      TO_CHAR(${truncatedDate}, ${dateFormat}) AS "period",
       SUM("totalAmount")::numeric AS "revenue",
       SUM("quantity")::bigint AS "unitsSold"
     FROM "SalesRecord"
     ${where}
-    GROUP BY DATE_TRUNC(${truncUnit}, "saleDate")
-    ORDER BY DATE_TRUNC(${truncUnit}, "saleDate") ASC
+    GROUP BY ${truncatedDate}
+    ORDER BY ${truncatedDate} ASC
   `);
 
   return {

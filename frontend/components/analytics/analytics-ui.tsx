@@ -161,6 +161,7 @@ export function RevenueChart({
   const width = 720
   const height = 250
   const pad = { top: 14, right: 14, bottom: 34, left: 48 }
+  const labelStep = Math.max(1, Math.ceil(data.length / 8))
   const values = data.flatMap((item) => [
     item.revenue,
     ...(item.forecast === undefined || item.forecast === null
@@ -273,15 +274,17 @@ export function RevenueChart({
                   <title>{`${item.period}: ${formatter(item.forecast)} estimated`}</title>
                 </circle>
               )}
-              <text
-                x={x(index)}
-                y={height - 8}
-                textAnchor="middle"
-                className="fill-muted-foreground"
-                fontSize="10"
-              >
-                {item.period}
-              </text>
+              {(index % labelStep === 0 || index === data.length - 1) && (
+                <text
+                  x={x(index)}
+                  y={height - 8}
+                  textAnchor="middle"
+                  className="fill-muted-foreground"
+                  fontSize="10"
+                >
+                  {item.period}
+                </text>
+              )}
             </g>
           ))}
         </svg>
