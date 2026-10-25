@@ -194,7 +194,7 @@ export function RevenueChart({
         </span>
         {comparison && (
           <span className="inline-flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-chart-2" /> Illustrative forecast
+            <span className="size-2.5 rounded-full bg-chart-2" /> Forecast estimate
           </span>
         )}
       </div>

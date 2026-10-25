@@ -65,8 +65,14 @@ function dateConditions(
 
 function periodSettings(aggregation: "daily" | "monthly") {
   return aggregation === "monthly"
-    ? { unit: "month", format: "YYYY-MM" }
-    : { unit: "day", format: "YYYY-MM-DD" };
+    ? {
+        truncatedDate: Prisma.sql`DATE_TRUNC('month', "saleDate")`,
+        format: "YYYY-MM",
+      }
+    : {
+        truncatedDate: Prisma.sql`DATE_TRUNC('day', "saleDate")`,
+        format: "YYYY-MM-DD",
+      };
 }
 
 function decimalString(value: number) {
@@ -83,7 +89,7 @@ function countObservedPeriods(observations: NumericObservation[]) {
 
 async function getSalesPeriods(filters: ForecastFilters | EvaluationFilters) {
   await ensureDatasetExists(filters.datasetId);
-  const { unit, format } = periodSettings(filters.aggregation);
+  const { truncatedDate, format } = periodSettings(filters.aggregation);
   const where = dateConditions(
     filters.datasetId,
     filters.startDate,
@@ -92,13 +98,13 @@ async function getSalesPeriods(filters: ForecastFilters | EvaluationFilters) {
 
   return prisma.$queryRaw<SalesPeriodRow[]>(Prisma.sql`
     SELECT
-      TO_CHAR(DATE_TRUNC(${unit}, "saleDate"), ${format}) AS "period",
+      TO_CHAR(${truncatedDate}, ${format}) AS "period",
       SUM("totalAmount")::numeric AS "revenue",
       SUM("quantity")::bigint AS "unitsSold"
     FROM "SalesRecord"
     ${where}
-    GROUP BY DATE_TRUNC(${unit}, "saleDate")
-    ORDER BY DATE_TRUNC(${unit}, "saleDate") ASC
+    GROUP BY ${truncatedDate}
+    ORDER BY ${truncatedDate} ASC
   `);
 }
 
@@ -168,7 +174,7 @@ export async function forecastSales(filters: ForecastFilters) {
 
 export async function forecastProductDemand(filters: ProductForecastFilters) {
   await ensureDatasetExists(filters.datasetId);
-  const { unit, format } = periodSettings(filters.aggregation);
+  const { truncatedDate, format } = periodSettings(filters.aggregation);
   const conditions: Prisma.Sql[] = [];
 
   if (filters.datasetId) {
@@ -198,12 +204,12 @@ export async function forecastProductDemand(filters: ProductForecastFilters) {
     SELECT
       MIN(BTRIM("productName")) AS "productName",
       MIN(BTRIM("category")) AS "category",
-      TO_CHAR(DATE_TRUNC(${unit}, "saleDate"), ${format}) AS "period",
+      TO_CHAR(${truncatedDate}, ${format}) AS "period",
       SUM("quantity")::bigint AS "quantity"
     FROM "SalesRecord"
     ${where}
-    GROUP BY LOWER(BTRIM("productName")), DATE_TRUNC(${unit}, "saleDate")
-    ORDER BY LOWER(BTRIM("productName")), DATE_TRUNC(${unit}, "saleDate")
+    GROUP BY LOWER(BTRIM("productName")), ${truncatedDate}
+    ORDER BY LOWER(BTRIM("productName")), ${truncatedDate}
   `);
 
   const grouped = new Map<
@@ -245,6 +251,11 @@ export async function forecastProductDemand(filters: ProductForecastFilters) {
     category: string;
     predictedDemand: number;
     forecasts: Array<{ period: string; predictedQuantity: number }>;
+    historicalObservations: Array<{
+      period: string;
+      quantity: number;
+      isImputedZero: boolean;
+    }>;
   }> = [];
   const insufficientProducts: Array<{
     productName: string;
@@ -302,6 +313,11 @@ export async function forecastProductDemand(filters: ProductForecastFilters) {
         0
       ),
       forecasts: productForecast,
+      historicalObservations: complete.map((observation) => ({
+        period: observation.period,
+        quantity: observation.value,
+        isImputedZero: observation.isImputedZero,
+      })),
     });
   }
 

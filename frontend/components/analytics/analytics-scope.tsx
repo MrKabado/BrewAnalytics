@@ -73,8 +73,9 @@ export function AnalyticsScopeProvider({
   }, [reloadKey])
 
   const setDatasetId = useCallback((value: string | undefined) => {
-    selectedDatasetId.current = value || undefined
-    setDatasetIdValue(value || undefined)
+    const normalizedValue = value === "all" ? undefined : value || undefined
+    selectedDatasetId.current = normalizedValue
+    setDatasetIdValue(normalizedValue)
   }, [])
   const refreshDatasets = useCallback(() => {
     setDatasetsLoading(true)
