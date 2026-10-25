@@ -9,7 +9,7 @@ export class ApiError extends Error {
 }
 
 type ApiRequestOptions = Omit<RequestInit, "body"> & {
-  body?: unknown
+  body?: BodyInit | object | null
   notifyUnauthorized?: boolean
 }
 
@@ -26,7 +26,8 @@ export async function apiRequest<T>(
   const requestHeaders = new Headers(headers)
   requestHeaders.set("Accept", "application/json")
 
-  if (body !== undefined) {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData
+  if (body !== undefined && !isFormData) {
     requestHeaders.set("Content-Type", "application/json")
   }
 
@@ -36,7 +37,12 @@ export async function apiRequest<T>(
       ...options,
       headers: requestHeaders,
       credentials: "include",
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : isFormData
+            ? body
+            : JSON.stringify(body),
     })
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {

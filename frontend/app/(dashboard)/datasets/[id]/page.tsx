@@ -2,65 +2,312 @@
 
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft, CalendarDays, FileSpreadsheet, Rows3 } from "lucide-react"
-import { Badge, EmptyState, PageHeading, Panel, StatCard } from "@/components/analytics/analytics-ui"
-import { datasets, formatCurrency, recordsPreview } from "@/lib/mock-data"
+import { useCallback, useEffect, useState } from "react"
+import {
+  ArrowLeft,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  Rows3,
+} from "lucide-react"
+import { EmptyState, PageHeading, Panel, StatCard } from "@/components/analytics/analytics-ui"
+import { ApiError } from "@/lib/api-client"
+import { getDataset, listDatasetRecords } from "@/lib/dataset-service"
+import type { Dataset, DatasetRecord, DatasetRecordFilters } from "@/lib/dataset-types"
+
+const PAGE_SIZE = 20
+type RecordFilters = Omit<DatasetRecordFilters, "page" | "pageSize">
+
+function formatDate(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? "Unknown date"
+    : new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      }).format(date)
+}
+
+function formatAmount(value: string) {
+  const amount = Number(value)
+  return Number.isFinite(amount)
+    ? new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(amount)
+    : value
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "An unexpected error occurred."
+}
 
 export default function DatasetDetailPage() {
   const params = useParams<{ id: string }>()
-  const dataset = datasets.find((item) => item.id === params.id)
+  const id = params.id
+  const [dataset, setDataset] = useState<Dataset | null>(null)
+  const [datasetLoading, setDatasetLoading] = useState(true)
+  const [loadedDatasetId, setLoadedDatasetId] = useState<string | null>(null)
+  const [datasetError, setDatasetError] = useState<unknown>(null)
+  const [datasetReloadKey, setDatasetReloadKey] = useState(0)
+  const [records, setRecords] = useState<DatasetRecord[]>([])
+  const [recordTotal, setRecordTotal] = useState(0)
+  const [recordTotalPages, setRecordTotalPages] = useState(0)
+  const [recordLoading, setRecordLoading] = useState(true)
+  const [recordError, setRecordError] = useState("")
+  const [recordReloadKey, setRecordReloadKey] = useState(0)
+  const [completedRecordsRequestKey, setCompletedRecordsRequestKey] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [filterForm, setFilterForm] = useState({
+    productName: "",
+    category: "",
+    paymentMethod: "",
+    saleDateFrom: "",
+    saleDateTo: "",
+  })
+  const [filters, setFilters] = useState<RecordFilters>({})
+  const recordsRequestKey = JSON.stringify({ id, page, filters, recordReloadKey })
+  const isDatasetLoading = datasetLoading || loadedDatasetId !== id
+  const isRecordLoading =
+    recordLoading || completedRecordsRequestKey !== recordsRequestKey
 
-  if (!dataset) {
+  useEffect(() => {
+    let active = true
+    void getDataset(id).then(
+      (response) => {
+        if (!active) return
+        setDataset(response.dataset)
+        setDatasetError(null)
+        setLoadedDatasetId(id)
+        setDatasetLoading(false)
+      },
+      (error: unknown) => {
+        if (!active) return
+        setDataset(null)
+        setDatasetError(error)
+        setLoadedDatasetId(id)
+        setDatasetLoading(false)
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [id, datasetReloadKey])
+
+  useEffect(() => {
+    let active = true
+    const requestFilters: DatasetRecordFilters = {
+      ...filters,
+      page,
+      pageSize: PAGE_SIZE,
+    }
+    void listDatasetRecords(id, requestFilters).then(
+      (response) => {
+        if (!active) return
+        setRecords(response.records)
+        setRecordTotal(response.pagination.total)
+        setRecordTotalPages(response.pagination.totalPages)
+        setRecordError("")
+        setCompletedRecordsRequestKey(recordsRequestKey)
+        setRecordLoading(false)
+      },
+      (error: unknown) => {
+        if (!active) return
+        setRecords([])
+        setRecordError(errorMessage(error))
+        setCompletedRecordsRequestKey(recordsRequestKey)
+        setRecordLoading(false)
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [filters, id, page, recordReloadKey, recordsRequestKey])
+
+  const retryDataset = useCallback(() => {
+    setDatasetLoading(true)
+    setDatasetError(null)
+    setDatasetReloadKey((key) => key + 1)
+  }, [])
+
+  function applyFilters(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const nextFilters: RecordFilters = {}
+    for (const [key, value] of Object.entries(filterForm)) {
+      if (value.trim()) {
+        Object.assign(nextFilters, { [key]: value.trim() })
+      }
+    }
+    setRecordLoading(true)
+    setPage(1)
+    setFilters(nextFilters)
+  }
+
+  function clearFilters() {
+    setFilterForm({
+      productName: "",
+      category: "",
+      paymentMethod: "",
+      saleDateFrom: "",
+      saleDateTo: "",
+    })
+    setRecordLoading(true)
+    setPage(1)
+    setFilters({})
+  }
+
+  if (isDatasetLoading) {
+    return (
+      <div aria-label="Loading dataset" aria-busy="true" className="space-y-5">
+        <div className="h-20 animate-pulse rounded-xl bg-muted/70" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl bg-muted/70" />)}
+        </div>
+        <div className="h-80 animate-pulse rounded-xl bg-muted/70" />
+      </div>
+    )
+  }
+
+  if (datasetError) {
+    const notFound = datasetError instanceof ApiError && datasetError.status === 404
     return (
       <>
-        <PageHeading title="Dataset not found" description="This sample dataset is not available in the current preview." actions={<Link href="/datasets" className="inline-flex items-center gap-2 text-sm font-medium text-primary"><ArrowLeft className="size-4" /> Back to datasets</Link>} />
-        <Panel><EmptyState icon={FileSpreadsheet} title="No matching dataset" description="Return to the dataset list to select an available sample." /></Panel>
+        <PageHeading
+          title={notFound ? "Dataset not found" : "Could not load dataset"}
+          description={notFound ? "The requested dataset does not exist or is no longer available." : errorMessage(datasetError)}
+          actions={<Link href="/datasets" className="inline-flex items-center gap-2 text-sm font-medium text-primary"><ArrowLeft className="size-4" /> Back to datasets</Link>}
+        />
+        {!notFound && (
+          <Panel>
+            <div className="text-center">
+              <p role="alert" className="text-sm text-muted-foreground">{errorMessage(datasetError)}</p>
+              <button type="button" onClick={retryDataset} className="mt-4 h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">Try again</button>
+            </div>
+          </Panel>
+        )}
+        {notFound && <Panel><EmptyState icon={FileSpreadsheet} title="No matching dataset" description="Return to the dataset list to select an available upload." /></Panel>}
       </>
     )
   }
+
+  if (!dataset) return null
 
   return (
     <>
       <PageHeading
         eyebrow="Datasets · Details"
         title={dataset.name}
-        description={dataset.fileName}
+        description={dataset.originalFileName}
         actions={<Link href="/datasets" className="inline-flex h-9 items-center gap-2 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted"><ArrowLeft className="size-4" /> All datasets</Link>}
       />
       <div className="mb-5 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Sales records" value={dataset.records.toLocaleString()} detail="Imported rows" icon={Rows3} />
-        <StatCard label="Dataset status" value={dataset.status} detail="Sample preview state" icon={FileSpreadsheet} />
-        <StatCard label="Uploaded" value={dataset.uploadedAt} detail="Sample upload date" icon={CalendarDays} />
+        <StatCard label="Sales records" value={dataset.recordCount.toLocaleString()} detail="Imported records" icon={Rows3} />
+        <StatCard label="Original file" value={dataset.originalFileName.split(".").pop()?.toUpperCase() ?? "File"} detail="Uploaded file format" icon={FileSpreadsheet} />
+        <StatCard label="Uploaded" value={formatDate(dataset.uploadedAt)} detail="Upload date" icon={CalendarDays} />
       </div>
-      <Panel title="Dataset metadata" description="Information about this sample upload">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div><p className="text-xs text-muted-foreground">Dataset name</p><p className="mt-1 text-sm font-medium">{dataset.name}</p></div>
-          <div><p className="text-xs text-muted-foreground">Original file</p><p className="mt-1 break-all text-sm font-medium">{dataset.fileName}</p></div>
-          <div><p className="text-xs text-muted-foreground">Records</p><p className="mt-1 text-sm font-medium">{dataset.records.toLocaleString()}</p></div>
-          <div><p className="text-xs text-muted-foreground">Status</p><div className="mt-1"><Badge tone="success">{dataset.status}</Badge></div></div>
-        </div>
+      <Panel title="Dataset metadata" description="Information returned for this upload">
+        <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div><dt className="text-xs text-muted-foreground">Dataset name</dt><dd className="mt-1 break-words text-sm font-medium">{dataset.name}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Original file</dt><dd className="mt-1 break-all text-sm font-medium">{dataset.originalFileName}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Record count</dt><dd className="mt-1 text-sm font-medium">{dataset.recordCount.toLocaleString()}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Uploaded at</dt><dd className="mt-1 text-sm font-medium">{formatDate(dataset.uploadedAt)}</dd></div>
+        </dl>
       </Panel>
-      <div className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-        <Panel title="Sample summary" description="Illustrative metrics from sample data">
-          <div className="space-y-4">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total revenue</span><span className="font-semibold">{formatCurrency(42680)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Units sold</span><span className="font-semibold">8,240</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Transactions</span><span className="font-semibold">4,186</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Average transaction</span><span className="font-semibold">$10.20</span></div>
+
+      <Panel
+        title="Sales records"
+        description="Records belonging to this dataset. Apply supported filters or page through results."
+        className="mt-5 p-0"
+      >
+        <form onSubmit={applyFilters} className="grid gap-3 border-b border-border p-4 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Product name
+            <input value={filterForm.productName} onChange={(event) => setFilterForm((current) => ({ ...current, productName: event.target.value }))} className="h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Category
+            <input value={filterForm.category} onChange={(event) => setFilterForm((current) => ({ ...current, category: event.target.value }))} className="h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Payment method
+            <input value={filterForm.paymentMethod} onChange={(event) => setFilterForm((current) => ({ ...current, paymentMethod: event.target.value }))} className="h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Sale date from
+            <input type="date" value={filterForm.saleDateFrom} onChange={(event) => setFilterForm((current) => ({ ...current, saleDateFrom: event.target.value }))} className="h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
+            Sale date to
+            <input type="date" value={filterForm.saleDateTo} onChange={(event) => setFilterForm((current) => ({ ...current, saleDateTo: event.target.value }))} className="h-9 rounded-lg border border-input bg-card px-3 text-sm text-foreground" />
+          </label>
+          <div className="flex items-end gap-2">
+            <button type="submit" className="h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90">Apply filters</button>
+            <button type="button" onClick={clearFilters} className="h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">Clear</button>
           </div>
-        </Panel>
-        <Panel title="Record preview" description="First few rows from this sample dataset">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-left text-xs">
-              <thead><tr className="border-b border-border text-muted-foreground"><th className="pb-2 font-medium">Transaction</th><th className="pb-2 font-medium">Date</th><th className="pb-2 font-medium">Product</th><th className="pb-2 text-right font-medium">Qty</th><th className="pb-2 text-right font-medium">Amount</th></tr></thead>
-              <tbody className="divide-y divide-border">
-                {recordsPreview.map((record) => <tr key={record.transaction}><td className="py-2.5 font-medium">{record.transaction}</td><td className="py-2.5 text-muted-foreground">{record.date}</td><td className="py-2.5">{record.product}</td><td className="py-2.5 text-right">{record.quantity}</td><td className="py-2.5 text-right">{formatCurrency(record.amount)}</td></tr>)}
-              </tbody>
-            </table>
+        </form>
+
+        {isRecordLoading ? (
+          <div aria-label="Loading records" aria-busy="true" className="space-y-3 p-5">
+            {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-10 animate-pulse rounded-lg bg-muted/70" />)}
           </div>
-        </Panel>
-      </div>
-      <p className="mt-4 text-xs text-muted-foreground">All values shown are static sample data. No database records are read or modified.</p>
+        ) : recordError ? (
+          <div className="p-8 text-center">
+            <h3 className="font-semibold">Could not load records</h3>
+            <p role="alert" className="mt-2 text-sm text-muted-foreground">{recordError}</p>
+            <button type="button" onClick={() => { setRecordLoading(true); setRecordReloadKey((key) => key + 1) }} className="mt-4 h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted">Try again</button>
+          </div>
+        ) : records.length ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+                    <th className="px-4 py-3 font-medium">Transaction</th>
+                    <th className="px-4 py-3 font-medium">Sale date</th>
+                    <th className="px-4 py-3 font-medium">Product</th>
+                    <th className="px-4 py-3 font-medium">Category</th>
+                    <th className="px-4 py-3 text-right font-medium">Qty</th>
+                    <th className="px-4 py-3 text-right font-medium">Unit price</th>
+                    <th className="px-4 py-3 text-right font-medium">Total amount</th>
+                    <th className="px-4 py-3 font-medium">Payment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {records.map((record) => (
+                    <tr key={record.id} className="hover:bg-muted/30">
+                      <td className="px-4 py-3 font-medium">{record.transactionId}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{record.saleDate.slice(0, 10)}</td>
+                      <td className="px-4 py-3">{record.productName}</td>
+                      <td className="px-4 py-3">{record.category}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{record.quantity.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatAmount(record.unitPrice)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{formatAmount(record.totalAmount)}</td>
+                      <td className="px-4 py-3">{record.paymentMethod}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-col gap-3 border-t border-border px-5 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <span>Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, recordTotal)} of {recordTotal} records</span>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button type="button" disabled={page <= 1 || isRecordLoading} onClick={() => { setRecordLoading(true); setPage((current) => current - 1) }} aria-label="Previous records page" className="rounded-md border border-border p-1.5 disabled:opacity-40"><ChevronLeft className="size-4" /></button>
+                <span>Page {page} of {Math.max(recordTotalPages, 1)}</span>
+                <button type="button" disabled={page >= recordTotalPages || isRecordLoading} onClick={() => { setRecordLoading(true); setPage((current) => current + 1) }} aria-label="Next records page" className="rounded-md border border-border p-1.5 disabled:opacity-40"><ChevronRight className="size-4" /></button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            icon={Rows3}
+            title={Object.keys(filters).length ? "No matching records" : "No sales records"}
+            description={Object.keys(filters).length ? "Adjust or clear the filters to see more records." : "This dataset has no imported sales records."}
+          />
+        )}
+      </Panel>
+      <p className="mt-4 text-xs text-muted-foreground">
+        Monetary values and sales details are displayed from the records returned for this dataset.
+      </p>
     </>
   )
 }
