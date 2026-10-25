@@ -30,6 +30,18 @@ interface CategoryPeriodRow {
   unitsSold: bigint;
 }
 
+function periodSettings(aggregation: "daily" | "monthly") {
+  return aggregation === "monthly"
+    ? {
+        truncatedDate: Prisma.sql`DATE_TRUNC('month', "saleDate")`,
+        format: "YYYY-MM",
+      }
+    : {
+        truncatedDate: Prisma.sql`DATE_TRUNC('day', "saleDate")`,
+        format: "YYYY-MM-DD",
+      };
+}
+
 async function getProductPeriodMetrics(filters: EvaluationFilters) {
   const conditions: Prisma.Sql[] = [];
 
@@ -46,18 +58,17 @@ async function getProductPeriodMetrics(filters: EvaluationFilters) {
   const where = conditions.length
     ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
     : Prisma.empty;
-  const unit = filters.aggregation === "monthly" ? "month" : "day";
-  const format = filters.aggregation === "monthly" ? "YYYY-MM" : "YYYY-MM-DD";
+  const { truncatedDate, format } = periodSettings(filters.aggregation);
   const rows = await prisma.$queryRaw<ProductPeriodRow[]>(Prisma.sql`
     SELECT
       MIN(BTRIM("productName")) AS "productName",
       MIN(BTRIM("category")) AS "category",
-      TO_CHAR(DATE_TRUNC(${unit}, "saleDate"), ${format}) AS "period",
+      TO_CHAR(${truncatedDate}, ${format}) AS "period",
       SUM("quantity")::bigint AS "quantity"
     FROM "SalesRecord"
     ${where}
-    GROUP BY LOWER(BTRIM("productName")), DATE_TRUNC(${unit}, "saleDate")
-    ORDER BY LOWER(BTRIM("productName")), DATE_TRUNC(${unit}, "saleDate")
+    GROUP BY LOWER(BTRIM("productName")), ${truncatedDate}
+    ORDER BY LOWER(BTRIM("productName")), ${truncatedDate}
   `);
 
   const byProduct = new Map<string, ProductPeriodRow[]>();
@@ -107,18 +118,17 @@ async function getCategoryPeriodMetrics(filters: EvaluationFilters) {
   const where = conditions.length
     ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
     : Prisma.empty;
-  const unit = filters.aggregation === "monthly" ? "month" : "day";
-  const format = filters.aggregation === "monthly" ? "YYYY-MM" : "YYYY-MM-DD";
+  const { truncatedDate, format } = periodSettings(filters.aggregation);
   const rows = await prisma.$queryRaw<CategoryPeriodRow[]>(Prisma.sql`
     SELECT
       MIN(BTRIM("category")) AS "category",
-      TO_CHAR(DATE_TRUNC(${unit}, "saleDate"), ${format}) AS "period",
+      TO_CHAR(${truncatedDate}, ${format}) AS "period",
       SUM("totalAmount")::numeric AS "revenue",
       SUM("quantity")::bigint AS "unitsSold"
     FROM "SalesRecord"
     ${where}
-    GROUP BY LOWER(BTRIM("category")), DATE_TRUNC(${unit}, "saleDate")
-    ORDER BY LOWER(BTRIM("category")), DATE_TRUNC(${unit}, "saleDate")
+    GROUP BY LOWER(BTRIM("category")), ${truncatedDate}
+    ORDER BY LOWER(BTRIM("category")), ${truncatedDate}
   `);
 
   const byCategory = new Map<string, CategoryPeriodRow[]>();
