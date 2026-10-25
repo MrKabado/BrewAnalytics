@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/components/auth/auth-provider"
 
 const navigation = [
   { label: "Overview", href: "/dashboard", icon: Gauge },
@@ -34,6 +35,13 @@ export function Sidebar({
   onClose: () => void
 }) {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const initials = (user?.name ?? user?.email ?? "BA")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase()
 
   const links = (items: typeof navigation) =>
     items.map(({ label, href, icon: Icon }) => {
@@ -128,13 +136,11 @@ export function Sidebar({
           ])}
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-muted/70 px-3 py-3">
             <span className="flex size-8 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground">
-              BA
+              {initials}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold">Brew Admin</p>
-              <p className="truncate text-[11px] text-muted-foreground">
-                admin@brewco.com
-              </p>
+              <p className="truncate text-xs font-semibold">{user?.name}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{user?.email}</p>
             </div>
             <ChevronLeft className="size-4 rotate-180 text-muted-foreground" />
           </div>

@@ -1,9 +1,12 @@
 "use client"
 
 import { usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useState } from "react"
-import { Bell, Menu, Search, X } from "lucide-react"
+import { Bell, LogOut, Menu, Search, X } from "lucide-react"
+import { toast } from "sonner"
+import { useAuth } from "@/components/auth/auth-provider"
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
@@ -16,12 +19,36 @@ const pageTitles: Record<string, string> = {
 
 export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const title = pathname.startsWith("/datasets/")
     ? "Dataset details"
     : (pageTitles[pathname] ?? "BrewAnalytics")
+  const initials = (user?.name ?? user?.email ?? "BA")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .toUpperCase()
+
+  async function handleLogout() {
+    setIsLoggingOut(true)
+    try {
+      await logout()
+      toast.success("You have been signed out.")
+      router.replace("/login")
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to sign out. Please try again.",
+      )
+    } finally {
+      setIsLoggingOut(false)
+    }
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur-sm sm:px-7 lg:px-9">
@@ -92,16 +119,24 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
             }}
             className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-primary"
           >
-            BA
+            {initials}
           </button>
           {accountOpen && (
             <div className="absolute top-11 right-0 z-50 w-56 rounded-xl border border-border bg-card p-2 shadow-lg">
               <div className="border-b border-border px-3 py-2">
-                <p className="text-sm font-semibold">Brew Admin</p>
-                <p className="text-xs text-muted-foreground">admin@brewco.com</p>
+                <p className="text-sm font-semibold">{user?.name}</p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
               <Link href="/settings" onClick={() => setAccountOpen(false)} className="mt-1 block rounded-lg px-3 py-2 text-sm hover:bg-muted">Account settings</Link>
-              <Link href="/login" onClick={() => setAccountOpen(false)} className="block rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Preview login screen</Link>
+              <button
+                type="button"
+                disabled={isLoggingOut}
+                onClick={() => void handleLogout()}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground hover:bg-muted disabled:opacity-60"
+              >
+                <LogOut className="size-4" />
+                {isLoggingOut ? "Signing out…" : "Sign out"}
+              </button>
             </div>
           )}
         </div>
