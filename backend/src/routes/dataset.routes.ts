@@ -3,6 +3,7 @@ import multer from "multer";
 import {
   getDatasetDetails,
   importDatasetReferenceData,
+  importDatasetSalesTransactions,
   listDatasetRecords,
   listDatasets,
   previewDatasetWorkbook,
@@ -17,7 +18,12 @@ import {
 
 const router = Router();
 
-export const handleUploadError: ErrorRequestHandler = (error, _req, res, next) => {
+export const handleUploadError: ErrorRequestHandler = (
+  error,
+  _req,
+  res,
+  next,
+) => {
   if (error instanceof UnsupportedUploadTypeError) {
     return res.status(415).json({
       status: "error",
@@ -50,21 +56,28 @@ router.post(
   requireAuth,
   uploadDatasetFile.single("file"),
   handleUploadError,
-  previewDatasetWorkbook
+  previewDatasetWorkbook,
 );
 router.post(
   "/:id/reference-data",
   requireAuth,
   uploadDatasetFile.single("file"),
   handleUploadError,
-  importDatasetReferenceData
+  importDatasetReferenceData,
+);
+router.post(
+  "/:id/sales-transactions",
+  requireAuth,
+  uploadDatasetFile.single("file"),
+  handleUploadError,
+  importDatasetSalesTransactions,
 );
 router.post(
   "/upload",
   requireAuth,
   uploadDatasetFile.single("file"),
   handleUploadError,
-  uploadDataset
+  uploadDataset,
 );
 router.get("/", requireAuth, listDatasets);
 router.get("/:id/records", requireAuth, listDatasetRecords);

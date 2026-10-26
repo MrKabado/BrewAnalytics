@@ -4,9 +4,7 @@ import express from "express";
 import { createServer, type Server } from "node:http";
 import * as XLSX from "xlsx";
 import { previewDatasetWorkbook } from "./dataset.controller";
-import {
-  handleUploadError,
-} from "../routes/dataset.routes";
+import { handleUploadError } from "../routes/dataset.routes";
 import { uploadDatasetFile } from "../middlewares/upload.middleware";
 
 const salesHeaders = [
@@ -28,7 +26,7 @@ function workbookBuffer(): Buffer {
       salesHeaders,
       ["T1", "2026-01-02", "Coffee", "Drinks", 1, 2.5, 2.5, "Cash"],
     ]),
-    "Sales"
+    "Sales",
   );
   XLSX.utils.book_append_sheet(
     workbook,
@@ -36,10 +34,12 @@ function workbookBuffer(): Buffer {
       ["productId", "productName"],
       ["P1", "Coffee"],
     ]),
-    "Products"
+    "Products",
   );
 
-  return Buffer.from(XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }));
+  return Buffer.from(
+    XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }),
+  );
 }
 
 describe("dataset workbook preview endpoint", () => {
@@ -51,7 +51,7 @@ describe("dataset workbook preview endpoint", () => {
     "/preview",
     uploadDatasetFile.single("file"),
     handleUploadError,
-    previewDatasetWorkbook
+    previewDatasetWorkbook,
   );
 
   before(async () => {
@@ -79,7 +79,7 @@ describe("dataset workbook preview endpoint", () => {
       new Blob([new Uint8Array(workbookBuffer())], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }),
-      "business-data.xlsx"
+      "business-data.xlsx",
     );
 
     const response = await fetch(baseUrl, { method: "POST", body: form });
@@ -98,14 +98,14 @@ describe("dataset workbook preview endpoint", () => {
     assert.equal(payload.worksheetCount, 2);
     assert.deepEqual(
       payload.worksheets.map((worksheet) => ({
-          name: worksheet.name,
-          rowCount: worksheet.rowCount,
-          supportedBySalesImporter: worksheet.supportedBySalesImporter,
-        })),
+        name: worksheet.name,
+        rowCount: worksheet.rowCount,
+        supportedBySalesImporter: worksheet.supportedBySalesImporter,
+      })),
       [
         { name: "Sales", rowCount: 1, supportedBySalesImporter: true },
         { name: "Products", rowCount: 1, supportedBySalesImporter: false },
-      ]
+      ],
     );
   });
 
@@ -122,12 +122,59 @@ describe("dataset workbook preview endpoint", () => {
     malformedForm.append(
       "file",
       new Blob(["not an Excel workbook"]),
-      "broken.xlsx"
+      "broken.xlsx",
     );
     const malformedResponse = await fetch(baseUrl, {
       method: "POST",
       body: malformedForm,
     });
     assert.equal(malformedResponse.status, 400);
+  });
+
+  it("recognizes the relational Sales Transactions worksheet format", async () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        [
+          "Transaction ID",
+          "Sale Date",
+          "Product ID",
+          "Quantity",
+          "Unit Price",
+          "Total Amount",
+          "Payment Method",
+          "Customer ID",
+        ],
+        ["T-1", "2026-01-02", "P-1", 1, 25, 25, "Cash", ""],
+      ]),
+      "Sales Transactions",
+    );
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([
+        new Uint8Array(
+          Buffer.from(
+            XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }),
+          ),
+        ),
+      ]),
+      "transactions.xlsx",
+    );
+    const response = await fetch(baseUrl, { method: "POST", body: form });
+    const payload = (await response.json()) as {
+      worksheets: Array<{
+        supportedBySalesImporter: boolean;
+        warnings: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.worksheets[0].supportedBySalesImporter, true);
+    assert.match(
+      payload.worksheets[0].warnings.join(" "),
+      /validated during import/,
+    );
   });
 });

@@ -28,6 +28,16 @@ import {
   parseReferenceWorkbook,
   ReferenceDataParseError,
 } from "../utils/reference-data.parser";
+import {
+  parseSalesTransactionWorkbook,
+  SalesTransactionParseError,
+} from "../utils/sales-transaction.parser";
+import {
+  ConcurrentSalesImportError,
+  DuplicateSalesImportError,
+  importSalesTransactions,
+  SalesTransactionImportError,
+} from "../services/sales-transaction.service";
 
 function getDatasetId(req: Request, res: Response): string | undefined {
   const id = req.params.id;
@@ -137,14 +147,15 @@ export async function importDatasetReferenceData(req: Request, res: Response) {
   if (extension !== ".xlsx" && extension !== ".xls") {
     return res.status(415).json({
       status: "error",
-      message: "Products and Customers import supports .xlsx and .xls files only.",
+      message:
+        "Products and Customers import supports .xlsx and .xls files only.",
     });
   }
 
   try {
     const parsed = parseReferenceWorkbook(
       req.file.buffer,
-      req.file.originalname
+      req.file.originalname,
     );
     const result = await importReferenceData(id, parsed);
     return res.status(201).json({
@@ -209,12 +220,95 @@ export async function importDatasetReferenceData(req: Request, res: Response) {
   }
 }
 
+export async function importDatasetSalesTransactions(
+  req: Request,
+  res: Response,
+) {
+  const id = getDatasetId(req, res);
+  if (!id) return;
+
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "An Excel workbook is required in the 'file' field.",
+    });
+  }
+
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  if (extension !== ".xlsx" && extension !== ".xls") {
+    return res.status(415).json({
+      status: "error",
+      message: "Sales Transactions import supports .xlsx and .xls files only.",
+    });
+  }
+
+  try {
+    const workbook = parseSalesTransactionWorkbook(
+      req.file.buffer,
+      req.file.originalname,
+    );
+    const result = await importSalesTransactions(
+      id,
+      workbook.worksheetName,
+      workbook.rows,
+    );
+    return res.status(201).json({
+      status: "success",
+      message: "Sales Transactions imported successfully.",
+      detectedWorksheets: workbook.worksheetNames,
+      ...result,
+    });
+  } catch (error) {
+    if (error instanceof SalesTransactionParseError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.worksheetErrors,
+      });
+    }
+    if (error instanceof SalesTransactionImportError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.worksheetErrors,
+      });
+    }
+    if (error instanceof DuplicateSalesImportError) {
+      return res.status(409).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.issues,
+      });
+    }
+    if (error instanceof ConcurrentSalesImportError) {
+      return res.status(409).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.issues,
+      });
+    }
+    if (error instanceof ReferenceDatasetNotFoundError) {
+      return res.status(404).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+
+    console.error("Dataset sales transactions import error:", error);
+    return res.status(500).json({
+      status: "error",
+      message:
+        "An unexpected error occurred while importing sales transactions.",
+    });
+  }
+}
+
 export async function listDatasets(req: Request, res: Response) {
   try {
     const pagination = parsePaginationParams(req.query);
     const { datasets, total } = await getDatasets(
       pagination.page,
-      pagination.pageSize
+      pagination.pageSize,
     );
 
     return res.status(200).json({

@@ -1,9 +1,6 @@
 import * as XLSX from "xlsx";
 import { validateSalesRows } from "./dataset.validation";
-import {
-  SALES_CSV_HEADERS,
-  type SalesCsvRow,
-} from "./csv.parser";
+import { SALES_CSV_HEADERS, type SalesCsvRow } from "./csv.parser";
 
 export const EXCEL_PREVIEW_ROW_LIMIT = 5;
 
@@ -22,6 +19,22 @@ export interface ExcelWorksheetPreview {
   supportedBySalesImporter: boolean;
   warnings: string[];
 }
+
+const TRANSACTION_PREVIEW_HEADERS = {
+  transactionId: ["transactionid"],
+  saleDate: [
+    "saledate",
+    "transactiondate",
+    "transactiondatetime",
+    "transactiondateandtime",
+  ],
+  productId: ["productid"],
+  quantity: ["quantity", "quantitysold"],
+  unitPrice: ["unitprice"],
+  totalAmount: ["totalamount", "totalsales"],
+  paymentMethod: ["paymentmethod"],
+  customerId: ["customerid"],
+} as const;
 
 export interface ExcelWorkbookPreview {
   fileName: string;
@@ -42,9 +55,9 @@ function hasExcelSignature(buffer: Buffer, extension: string): boolean {
 
   return (
     buffer.length >= 8 &&
-    buffer.subarray(0, 8).equals(
-      Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
-    )
+    buffer
+      .subarray(0, 8)
+      .equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))
   );
 }
 
@@ -70,7 +83,7 @@ function cellToString(value: unknown): string {
 
 export function readExcelWorkbook(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
 ): XLSX.WorkBook {
   const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
 
@@ -79,7 +92,7 @@ export function readExcelWorkbook(
     !hasExcelSignature(buffer, extension)
   ) {
     throw new ExcelParseError(
-      "The file content does not match a supported Excel workbook."
+      "The file content does not match a supported Excel workbook.",
     );
   }
 
@@ -97,7 +110,7 @@ export function readExcelWorkbook(
 
 function getSheetGrid(
   worksheet: XLSX.WorkSheet,
-  sheetName: string
+  sheetName: string,
 ): unknown[][] {
   try {
     return XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
@@ -118,7 +131,7 @@ function getFormulaCells(worksheet: XLSX.WorkSheet): string[] {
         !address.startsWith("!") &&
         typeof cell === "object" &&
         cell !== null &&
-        "f" in cell
+        "f" in cell,
     )
     .map(([address]) => address);
 }
@@ -131,34 +144,35 @@ function getErrorCells(worksheet: XLSX.WorkSheet): string[] {
         typeof cell === "object" &&
         cell !== null &&
         "t" in cell &&
-        cell.t === "e"
+        cell.t === "e",
     )
     .map(([address]) => address);
 }
 
 function nonEmptyRows(rows: unknown[][]): unknown[][] {
   return rows.filter((row) =>
-    row.some((value) => cellToString(value).trim() !== "")
+    row.some((value) => cellToString(value).trim() !== ""),
   );
 }
 
 function rowsToSalesRecords(
   headers: string[],
-  rows: unknown[][]
+  rows: unknown[][],
 ): SalesCsvRow[] {
-  return rows.map((values) =>
-    Object.fromEntries(
-      SALES_CSV_HEADERS.map((header) => [
-        header,
-        cellToString(values[headers.indexOf(header)]),
-      ])
-    ) as SalesCsvRow
+  return rows.map(
+    (values) =>
+      Object.fromEntries(
+        SALES_CSV_HEADERS.map((header) => [
+          header,
+          cellToString(values[headers.indexOf(header)]),
+        ]),
+      ) as SalesCsvRow,
   );
 }
 
 function inspectWorksheet(
   name: string,
-  worksheet: XLSX.WorkSheet | undefined
+  worksheet: XLSX.WorkSheet | undefined,
 ): ExcelWorksheetPreview {
   const warnings: string[] = [];
 
@@ -177,12 +191,12 @@ function inspectWorksheet(
   const errorCells = getErrorCells(worksheet);
   if (formulaCells.length > 0) {
     warnings.push(
-      `Formula cells are not supported (${formulaCells.slice(0, 5).join(", ")}${formulaCells.length > 5 ? ", …" : ""}).`
+      `Formula cells are not supported (${formulaCells.slice(0, 5).join(", ")}${formulaCells.length > 5 ? ", …" : ""}).`,
     );
   }
   if (errorCells.length > 0) {
     warnings.push(
-      `Excel error cells were found (${errorCells.slice(0, 5).join(", ")}${errorCells.length > 5 ? ", …" : ""}).`
+      `Excel error cells were found (${errorCells.slice(0, 5).join(", ")}${errorCells.length > 5 ? ", …" : ""}).`,
     );
   }
 
@@ -191,7 +205,7 @@ function inspectWorksheet(
     grid = getSheetGrid(worksheet, name);
   } catch (error) {
     warnings.push(
-      error instanceof Error ? error.message : "Worksheet could not be read."
+      error instanceof Error ? error.message : "Worksheet could not be read.",
     );
     return {
       name,
@@ -204,26 +218,71 @@ function inspectWorksheet(
   }
 
   const headers = (grid[0] ?? []).map((value) => cellToString(value).trim());
+  const normalizedHeaders = headers.map((header) =>
+    header.toLocaleLowerCase().replace(/[^a-z0-9]/g, ""),
+  );
+  const normalizedName = name.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
+  const transactionWorksheet = normalizedName === "salestransactions";
+  const legacyMissingHeaders = SALES_CSV_HEADERS.filter(
+    (header) => !headers.includes(header),
+  );
+  const transactionMissingHeaders = Object.entries(TRANSACTION_PREVIEW_HEADERS)
+    .filter(([field]) => field !== "customerId")
+    .filter(
+      ([, aliases]) =>
+        !aliases.some((alias) => normalizedHeaders.includes(alias)),
+    )
+    .map(([field]) => field);
+  const ambiguousTransactionHeaders = Object.entries(
+    TRANSACTION_PREVIEW_HEADERS,
+  )
+    .filter(
+      ([, aliases]) =>
+        aliases.reduce(
+          (count, alias) =>
+            count +
+            normalizedHeaders.filter((header) => header === alias).length,
+          0,
+        ) > 1,
+    )
+    .map(([field]) => field);
+  const usesLegacyHeaders = legacyMissingHeaders.length === 0;
+  const usesTransactionHeaders =
+    transactionWorksheet &&
+    transactionMissingHeaders.length === 0 &&
+    ambiguousTransactionHeaders.length === 0;
+  const requiredMissingHeaders = usesTransactionHeaders
+    ? []
+    : transactionWorksheet && !usesLegacyHeaders
+      ? transactionMissingHeaders
+      : legacyMissingHeaders;
   const hasHeader = headers.length > 0 && headers.some(Boolean);
   if (!hasHeader) {
     warnings.push("Worksheet does not contain a header row.");
   }
-
-  const duplicateHeaders = headers.filter(
-    (header, index) => header && headers.indexOf(header) !== index
-  );
-  if (duplicateHeaders.length > 0) {
+  if (transactionWorksheet && ambiguousTransactionHeaders.length > 0) {
     warnings.push(
-      `Duplicate headers were found: ${[...new Set(duplicateHeaders)].join(", ")}.`
+      `Ambiguous Sales Transactions headers found for: ${ambiguousTransactionHeaders.join(", ")}.`,
     );
   }
 
-  const missingHeaders = SALES_CSV_HEADERS.filter(
-    (header) => !headers.includes(header)
+  const duplicateHeaders = headers.filter(
+    (header, index) => header && headers.indexOf(header) !== index,
   );
-  if (hasHeader && missingHeaders.length > 0) {
+  if (duplicateHeaders.length > 0) {
     warnings.push(
-      `Required sales headers missing: ${missingHeaders.join(", ")}.`
+      `Duplicate headers were found: ${[...new Set(duplicateHeaders)].join(", ")}.`,
+    );
+  }
+
+  if (hasHeader && requiredMissingHeaders.length > 0) {
+    warnings.push(
+      `Required sales headers missing: ${requiredMissingHeaders.join(", ")}.`,
+    );
+  }
+  if (usesTransactionHeaders) {
+    warnings.push(
+      "Sales Transactions worksheet structure recognized; row values and Product/Customer references are validated during import.",
     );
   }
 
@@ -233,7 +292,7 @@ function inspectWorksheet(
   }
 
   const hasDataOutsideHeaders = dataRows.some((row) =>
-    row.slice(headers.length).some((value) => cellToString(value).trim())
+    row.slice(headers.length).some((value) => cellToString(value).trim()),
   );
   if (hasDataOutsideHeaders) {
     warnings.push("Data was found in columns beyond the header row.");
@@ -242,30 +301,38 @@ function inspectWorksheet(
   let rowsAreValid = false;
   if (
     hasHeader &&
-    missingHeaders.length === 0 &&
+    requiredMissingHeaders.length === 0 &&
     duplicateHeaders.length === 0 &&
     dataRows.length > 0 &&
     !hasDataOutsideHeaders
   ) {
-    try {
-      validateSalesRows(rowsToSalesRecords(headers, dataRows));
+    if (usesTransactionHeaders) {
       rowsAreValid = true;
-    } catch (error) {
-      warnings.push(
-        error instanceof Error
-          ? `Sales validation failed: ${error.message}`
-          : "Sales validation failed."
-      );
+    } else {
+      try {
+        validateSalesRows(rowsToSalesRecords(headers, dataRows));
+        rowsAreValid = true;
+      } catch (error) {
+        warnings.push(
+          error instanceof Error
+            ? `Sales validation failed: ${error.message}`
+            : "Sales validation failed.",
+        );
+      }
     }
   }
 
-  const salesHeaders = new Set<string>(SALES_CSV_HEADERS);
-  const extraHeaders = headers.filter(
-    (header) => header && !salesHeaders.has(header)
+  const salesHeaders = new Set<string>(
+    usesTransactionHeaders
+      ? Object.values(TRANSACTION_PREVIEW_HEADERS).flat()
+      : SALES_CSV_HEADERS,
   );
+  const extraHeaders = (
+    usesTransactionHeaders ? normalizedHeaders : headers
+  ).filter((header) => header && !salesHeaders.has(header));
   if (extraHeaders.length > 0) {
     warnings.push(
-      `Additional columns are ignored by the sales importer: ${extraHeaders.join(", ")}.`
+      `Additional columns are ignored by the sales importer: ${extraHeaders.join(", ")}.`,
     );
   }
 
@@ -292,7 +359,7 @@ function getWorkbookSheetNames(workbook: XLSX.WorkBook): string[] {
 
 export function inspectSalesExcel(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
 ): ExcelWorkbookPreview {
   const workbook = readExcelWorkbook(buffer, fileName);
   const sheetNames = getWorkbookSheetNames(workbook);
@@ -301,19 +368,19 @@ export function inspectSalesExcel(
     fileName,
     worksheetCount: sheetNames.length,
     worksheets: sheetNames.map((name) =>
-      inspectWorksheet(name, workbook.Sheets[name])
+      inspectWorksheet(name, workbook.Sheets[name]),
     ),
   };
 }
 
 export function parseSalesExcel(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
 ): SalesCsvRow[] {
   const workbook = readExcelWorkbook(buffer, fileName);
   const sheetNames = getWorkbookSheetNames(workbook);
   const inspectedWorksheets = sheetNames.map((name) =>
-    inspectWorksheet(name, workbook.Sheets[name])
+    inspectWorksheet(name, workbook.Sheets[name]),
   );
 
   if (sheetNames.length > 1) {
@@ -325,7 +392,7 @@ export function parseSalesExcel(
       : " No worksheets match the sales import format.";
 
     throw new ExcelParseError(
-      `Multi-worksheet import is not supported. Detected worksheets: ${sheetNames.join(", ")}.${supportedMessage} Use the workbook preview endpoint to inspect the sheets.`
+      `Multi-worksheet import is not supported. Detected worksheets: ${sheetNames.join(", ")}.${supportedMessage} Use the workbook preview endpoint to inspect the sheets.`,
     );
   }
 
@@ -343,34 +410,38 @@ export function parseSalesExcel(
   }
 
   if (new Set(headers).size !== headers.length) {
-    throw new ExcelParseError("The first worksheet contains duplicate headers.");
+    throw new ExcelParseError(
+      "The first worksheet contains duplicate headers.",
+    );
   }
 
   const missingHeaders = SALES_CSV_HEADERS.filter(
-    (header) => !headers.includes(header)
+    (header) => !headers.includes(header),
   );
   if (missingHeaders.length > 0) {
     throw new ExcelParseError(
-      `Missing required Excel headers: ${missingHeaders.join(", ")}.`
+      `Missing required Excel headers: ${missingHeaders.join(", ")}.`,
     );
   }
 
   const rows = nonEmptyRows(grid.slice(1));
   if (getFormulaCells(worksheet).length > 0) {
     throw new ExcelParseError(
-      "Formula cells are not supported. Replace formulas with their values."
+      "Formula cells are not supported. Replace formulas with their values.",
     );
   }
   if (getErrorCells(worksheet).length > 0) {
     throw new ExcelParseError(
-      "Excel error cells are not supported. Correct the worksheet values and retry."
+      "Excel error cells are not supported. Correct the worksheet values and retry.",
     );
   }
 
   return rows.map((values, index) => {
-    if (values.slice(headers.length).some((value) => cellToString(value).trim())) {
+    if (
+      values.slice(headers.length).some((value) => cellToString(value).trim())
+    ) {
       throw new ExcelParseError(
-        `Row ${index + 2}: data was found outside the header columns.`
+        `Row ${index + 2}: data was found outside the header columns.`,
       );
     }
 
