@@ -4,6 +4,7 @@ import {
   getDatasetDetails,
   listDatasetRecords,
   listDatasets,
+  previewDatasetWorkbook,
   removeDataset,
   uploadDataset,
 } from "../controllers/dataset.controller";
@@ -43,6 +44,13 @@ export const handleUploadError: ErrorRequestHandler = (error, _req, res, next) =
   next(error);
 };
 
+router.post(
+  "/preview",
+  requireAuth,
+  uploadDatasetFile.single("file"),
+  handleUploadError,
+  previewDatasetWorkbook
+);
 router.post(
   "/upload",
   requireAuth,

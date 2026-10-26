@@ -7,7 +7,12 @@ import {
   CsvParseError,
   parseSalesCsv,
 } from "./csv.parser";
-import { ExcelParseError, parseSalesExcel } from "./excel.parser";
+import {
+  EXCEL_PREVIEW_ROW_LIMIT,
+  ExcelParseError,
+  inspectSalesExcel,
+  parseSalesExcel,
+} from "./excel.parser";
 
 const headers = [
   "transactionId",
@@ -69,7 +74,6 @@ describe("Excel sales parser", () => {
             "Cash",
           ],
         ],
-        true
       );
 
       const rows = parseSalesExcel(buffer, `sales.${bookType}`);
@@ -88,12 +92,16 @@ describe("Excel sales parser", () => {
     });
   }
 
-  it("rejects an empty workbook and an empty first worksheet", () => {
+  it("rejects and previews an empty first worksheet", () => {
     const emptySheet = workbookBuffer("xlsx", []);
 
     assert.throws(
       () => parseSalesExcel(emptySheet, "empty.xlsx"),
       ExcelParseError
+    );
+    assert.equal(
+      inspectSalesExcel(emptySheet, "empty.xlsx").worksheets[0].warnings[0],
+      "Worksheet is empty."
     );
   });
 
@@ -147,6 +155,102 @@ describe("Excel sales parser", () => {
     assert.throws(
       () => parseSalesExcel(buffer, "formula.xlsx"),
       /Formula cells are not supported/
+    );
+  });
+
+  it("previews every worksheet and identifies sales-import compatibility", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        headers,
+        ["T1", "2026-01-02", "Coffee", "Drinks", 1, 2.5, 2.5, "Cash"],
+      ]),
+      "Sales Transactions"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["productId", "productName", "unitCost"],
+        ["P1", "Coffee", 1],
+      ]),
+      "Products"
+    );
+
+    const buffer = Buffer.from(
+      XLSX.write(workbook, { bookType: "xlsx", type: "buffer" })
+    );
+    const preview = inspectSalesExcel(buffer, "business-data.xlsx");
+
+    assert.equal(preview.worksheetCount, 2);
+    assert.deepEqual(
+      preview.worksheets.map(({ name, rowCount, supportedBySalesImporter }) => ({
+        name,
+        rowCount,
+        supportedBySalesImporter,
+      })),
+      [
+        {
+          name: "Sales Transactions",
+          rowCount: 1,
+          supportedBySalesImporter: true,
+        },
+        { name: "Products", rowCount: 1, supportedBySalesImporter: false },
+      ]
+    );
+    assert.deepEqual(preview.worksheets[0].previewRows, [
+      ["T1", "2026-01-02", "Coffee", "Drinks", "1", "2.5", "2.5", "Cash"],
+    ]);
+    assert.match(
+      preview.worksheets[1].warnings.join(" "),
+      /Required sales headers missing/
+    );
+  });
+
+  it("limits preview rows and reports invalid sales cell values", () => {
+    const rows: unknown[][] = [
+      headers,
+      ...Array.from({ length: EXCEL_PREVIEW_ROW_LIMIT + 2 }, (_, index) => [
+        `T${index + 1}`,
+        "2026-01-02",
+        "Coffee",
+        "Drinks",
+        index === 0 ? "invalid" : 1,
+        2.5,
+        2.5,
+        "Cash",
+      ]),
+    ];
+    const preview = inspectSalesExcel(
+      workbookBuffer("xlsx", rows),
+      "invalid-values.xlsx"
+    );
+
+    assert.equal(preview.worksheets[0].rowCount, EXCEL_PREVIEW_ROW_LIMIT + 2);
+    assert.equal(
+      preview.worksheets[0].previewRows.length,
+      EXCEL_PREVIEW_ROW_LIMIT
+    );
+    assert.equal(preview.worksheets[0].supportedBySalesImporter, false);
+    assert.match(
+      preview.worksheets[0].warnings.join(" "),
+      /quantity must be a positive whole number/
+    );
+  });
+
+  it("rejects multi-worksheet imports instead of silently importing the first sheet", () => {
+    const buffer = workbookBuffer(
+      "xlsx",
+      [
+        headers,
+        ["T1", "2026-01-02", "Coffee", "Drinks", 1, 2.5, 2.5, "Cash"],
+      ],
+      true
+    );
+
+    assert.throws(
+      () => parseSalesExcel(buffer, "multiple-sheets.xlsx"),
+      /Detected worksheets: Sales, Other\. Sales-compatible worksheets: Sales/
     );
   });
 

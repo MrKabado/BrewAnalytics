@@ -1,7 +1,11 @@
 import type { Request, Response } from "express";
 import path from "node:path";
 import { CsvParseError, parseSalesCsv } from "../utils/csv.parser";
-import { ExcelParseError, parseSalesExcel } from "../utils/excel.parser";
+import {
+  ExcelParseError,
+  inspectSalesExcel,
+  parseSalesExcel,
+} from "../utils/excel.parser";
 import {
   createDatasetFromCsv,
   deleteDataset,
@@ -66,6 +70,44 @@ export async function uploadDataset(req: Request, res: Response) {
     return res.status(500).json({
       status: "error",
       message: "An unexpected error occurred while uploading the dataset.",
+    });
+  }
+}
+
+export async function previewDatasetWorkbook(req: Request, res: Response) {
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "An Excel workbook is required in the 'file' field.",
+    });
+  }
+
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  if (extension !== ".xlsx" && extension !== ".xls") {
+    return res.status(415).json({
+      status: "error",
+      message: "Workbook preview supports .xlsx and .xls files only.",
+    });
+  }
+
+  try {
+    const preview = inspectSalesExcel(req.file.buffer, req.file.originalname);
+    return res.status(200).json({
+      status: "success",
+      ...preview,
+    });
+  } catch (error) {
+    if (error instanceof ExcelParseError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+
+    console.error("Dataset workbook preview error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "An unexpected error occurred while previewing the workbook.",
     });
   }
 }
