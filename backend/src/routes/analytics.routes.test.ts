@@ -34,14 +34,18 @@ describe("analytics route authentication", () => {
 
   it("requires authentication on every analytics endpoint", async () => {
     const responses = await Promise.all(
-      ["overview", "products", "categories", "sales-trends"].map((endpoint) =>
-        fetch(`${baseUrl}/${endpoint}`)
-      )
+      [
+        "overview",
+        "products",
+        "categories",
+        "sales-trends",
+        "daily-summary",
+      ].map((endpoint) => fetch(`${baseUrl}/${endpoint}`)),
     );
 
     assert.deepEqual(
       responses.map((response) => response.status),
-      [401, 401, 401, 401]
+      [401, 401, 401, 401, 401],
     );
   });
 });

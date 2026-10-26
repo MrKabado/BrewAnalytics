@@ -10,6 +10,7 @@ import {
   previewDatasetWorkbook,
   removeDataset,
   uploadDataset,
+  validateDatasetData,
 } from "../controllers/dataset.controller";
 import { requireAuth } from "../middlewares/auth.middleware";
 import {
@@ -88,6 +89,7 @@ router.post(
   uploadDataset,
 );
 router.get("/", requireAuth, listDatasets);
+router.get("/:id/validation", requireAuth, validateDatasetData);
 router.get("/:id/records", requireAuth, listDatasetRecords);
 router.get("/:id", requireAuth, getDatasetDetails);
 router.delete("/:id", requireAuth, removeDataset);

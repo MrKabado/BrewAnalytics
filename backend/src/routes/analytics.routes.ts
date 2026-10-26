@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   categoryPerformance,
+  dailySalesSummary,
   productPerformance,
   salesOverview,
   salesTrends,
@@ -16,6 +17,7 @@ router.get("/overview", salesOverview);
 router.get("/products", productPerformance);
 router.get("/categories", categoryPerformance);
 router.get("/sales-trends", salesTrends);
+router.get("/daily-summary", dailySalesSummary);
 router.use("/forecasts", forecastRoutes);
 router.use("/recommendations", recommendationRoutes);
 

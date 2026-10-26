@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../lib/prisma";
 import type {
   AnalyticsFilters,
@@ -31,6 +32,16 @@ interface TrendRow {
   unitsSold: bigint;
 }
 
+interface DailySalesRow {
+  saleDate: string;
+  totalRevenue: Prisma.Decimal;
+  totalTransactions: bigint;
+  totalUnitsSold: bigint;
+  averageTransactionValue: Prisma.Decimal;
+  averageSellingPricePerUnit: Prisma.Decimal;
+  distinctProductsSold: bigint;
+}
+
 export class DatasetNotFoundError extends Error {
   constructor() {
     super("Dataset not found.");
@@ -58,12 +69,15 @@ function safeCount(value: bigint): number {
   return number;
 }
 
-async function requireDataset(datasetId?: string): Promise<void> {
+async function requireDataset(
+  datasetId?: string,
+  client = prisma,
+): Promise<void> {
   if (!datasetId) {
     return;
   }
 
-  const dataset = await prisma.dataset.findUnique({
+  const dataset = await client.dataset.findUnique({
     where: { id: datasetId },
     select: { id: true },
   });
@@ -105,7 +119,7 @@ export async function getSalesOverview(filters: AnalyticsFilters) {
 
 async function getProductRanking(
   filters: AnalyticsFilters & { category?: string; topN: number },
-  ranking: "quantity" | "revenue"
+  ranking: "quantity" | "revenue",
 ) {
   const conditions: Prisma.Sql[] = [];
 
@@ -114,7 +128,7 @@ async function getProductRanking(
   }
   if (filters.category) {
     conditions.push(
-      Prisma.sql`LOWER(BTRIM("category")) = LOWER(BTRIM(${filters.category}))`
+      Prisma.sql`LOWER(BTRIM("category")) = LOWER(BTRIM(${filters.category}))`,
     );
   }
 
@@ -147,7 +161,7 @@ async function getProductRanking(
 }
 
 export async function getProductPerformance(
-  filters: AnalyticsFilters & { category?: string; topN: number }
+  filters: AnalyticsFilters & { category?: string; topN: number },
 ) {
   await requireDataset(filters.datasetId);
   const [byQuantity, byRevenue] = await Promise.all([
@@ -172,7 +186,7 @@ export async function getCategoryPerformance(filters: AnalyticsFilters) {
       SELECT COALESCE(SUM("totalAmount"), 0)::numeric AS "totalRevenue"
       FROM "SalesRecord"
       ${where}
-    `
+    `,
   );
   const rows = await prisma.$queryRaw<CategoryRow[]>(Prisma.sql`
     SELECT
@@ -195,10 +209,9 @@ export async function getCategoryPerformance(filters: AnalyticsFilters) {
       revenue: decimalString(row.totalRevenue),
       unitsSold: safeCount(row.unitsSold),
       salesRecordCount: safeCount(row.salesRecordCount),
-      revenuePercentage:
-        totalRevenue.isZero()
-          ? "0.00"
-          : row.totalRevenue.div(totalRevenue).mul(100).toFixed(2),
+      revenuePercentage: totalRevenue.isZero()
+        ? "0.00"
+        : row.totalRevenue.div(totalRevenue).mul(100).toFixed(2),
     })),
   };
 }
@@ -223,7 +236,8 @@ export async function getSalesTrends(filters: SalesTrendFilters) {
     conditions.length > 0
       ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
       : Prisma.empty;
-  const dateFormat = filters.aggregation === "monthly" ? "YYYY-MM" : "YYYY-MM-DD";
+  const dateFormat =
+    filters.aggregation === "monthly" ? "YYYY-MM" : "YYYY-MM-DD";
   const truncatedDate =
     filters.aggregation === "monthly"
       ? Prisma.sql`DATE_TRUNC('month', "saleDate")`
@@ -252,6 +266,101 @@ export async function getSalesTrends(filters: SalesTrendFilters) {
       period: row.period,
       revenue: decimalString(row.revenue),
       unitsSold: safeCount(row.unitsSold),
+    })),
+  };
+}
+
+export async function getDailySalesSummary(
+  filters: SalesTrendFilters,
+  client: PrismaClient = prisma,
+) {
+  await requireDataset(filters.datasetId, client);
+  const conditions: Prisma.Sql[] = [];
+  if (filters.datasetId) {
+    conditions.push(Prisma.sql`"datasetId" = ${filters.datasetId}`);
+  }
+  if (filters.startDate) {
+    conditions.push(Prisma.sql`"saleDate" >= ${filters.startDate}`);
+  }
+  if (filters.endDate) {
+    conditions.push(Prisma.sql`"saleDate" <= ${filters.endDate}`);
+  }
+  const where =
+    conditions.length > 0
+      ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
+      : Prisma.empty;
+
+  const rows = await client.$queryRaw<DailySalesRow[]>(Prisma.sql`
+    WITH daily_records AS (
+      SELECT
+        "saleDate",
+        "transactionId",
+        "totalAmount",
+        "quantity",
+        "productId",
+        "productName"
+      FROM "SalesRecord"
+      ${where}
+    ),
+    daily_transaction_totals AS (
+      SELECT "saleDate", "transactionId", SUM("totalAmount") AS transaction_total
+      FROM daily_records
+      GROUP BY "saleDate", "transactionId"
+    ),
+    daily_transaction_averages AS (
+      SELECT "saleDate", AVG(transaction_total) AS average_transaction_value
+      FROM daily_transaction_totals
+      GROUP BY "saleDate"
+    ),
+    daily_metrics AS (
+      SELECT
+        r."saleDate",
+        SUM(r."totalAmount")::numeric AS total_revenue,
+        COUNT(DISTINCT r."transactionId")::bigint AS total_transactions,
+        SUM(r."quantity")::bigint AS total_units_sold,
+        (SUM(r."totalAmount") / NULLIF(SUM(r."quantity"), 0))::numeric
+          AS average_selling_price_per_unit,
+        COUNT(DISTINCT CASE
+          WHEN r."productId" IS NOT NULL THEN 'id:' || r."productId"
+          ELSE 'name:' || LOWER(BTRIM(r."productName"))
+        END)::bigint AS distinct_products_sold
+      FROM daily_records r
+      GROUP BY r."saleDate"
+    )
+    SELECT
+      TO_CHAR(m."saleDate", 'YYYY-MM-DD') AS "saleDate",
+      m.total_revenue AS "totalRevenue",
+      m.total_transactions AS "totalTransactions",
+      m.total_units_sold AS "totalUnitsSold",
+      a.average_transaction_value::numeric AS "averageTransactionValue",
+      m.average_selling_price_per_unit AS "averageSellingPricePerUnit",
+      m.distinct_products_sold AS "distinctProductsSold"
+    FROM daily_metrics m
+    JOIN daily_transaction_averages a ON a."saleDate" = m."saleDate"
+    ORDER BY m."saleDate" ASC
+  `);
+
+  return {
+    ...(filters.datasetId ? { datasetId: filters.datasetId } : {}),
+    ...(filters.startDate
+      ? { startDate: filters.startDate.toISOString().slice(0, 10) }
+      : {}),
+    ...(filters.endDate
+      ? { endDate: filters.endDate.toISOString().slice(0, 10) }
+      : {}),
+    marketingSpend: null,
+    marketingSpendNote:
+      "Daily marketing spend is unavailable because campaign costs are not allocated to sales dates.",
+    dailySummary: rows.map((row) => ({
+      saleDate: row.saleDate,
+      totalRevenue: decimalString(row.totalRevenue),
+      totalTransactions: safeCount(row.totalTransactions),
+      totalUnitsSold: safeCount(row.totalUnitsSold),
+      averageTransactionValue: decimalString(row.averageTransactionValue),
+      averageSellingPricePerUnit: decimalString(
+        row.averageSellingPricePerUnit ?? new Prisma.Decimal(0),
+      ),
+      distinctProductsSold: safeCount(row.distinctProductsSold),
     })),
   };
 }

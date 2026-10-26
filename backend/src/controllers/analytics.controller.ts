@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import {
   DatasetNotFoundError,
   getCategoryPerformance,
+  getDailySalesSummary,
   getProductPerformance,
   getSalesOverview,
   getSalesTrends,
@@ -16,7 +17,7 @@ import { DatasetValidationError } from "../utils/dataset.validation";
 function handleAnalyticsError(
   error: unknown,
   res: Response,
-  operation: string
+  operation: string,
 ) {
   if (error instanceof DatasetValidationError) {
     return res.status(400).json({
@@ -92,5 +93,24 @@ export async function salesTrends(req: Request, res: Response) {
     });
   } catch (error) {
     return handleAnalyticsError(error, res, "sales trends");
+  }
+}
+
+export async function dailySalesSummary(req: Request, res: Response) {
+  try {
+    const filters = parseSalesTrendFilters(req.query);
+    if (filters.aggregation !== "daily") {
+      throw new DatasetValidationError(
+        "aggregation must be 'daily' for the daily sales summary.",
+      );
+    }
+    const summary = await getDailySalesSummary(filters);
+
+    return res.status(200).json({
+      status: "success",
+      ...summary,
+    });
+  } catch (error) {
+    return handleAnalyticsError(error, res, "daily sales summary");
   }
 }

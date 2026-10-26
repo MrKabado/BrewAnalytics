@@ -47,6 +47,8 @@ import {
   CampaignParseError,
   parseCampaignWorkbook,
 } from "../utils/campaign.parser";
+import { validateDataset } from "../services/dataset.validation.service";
+import { DatasetNotFoundError } from "../services/analytics.service";
 
 function getDatasetId(req: Request, res: Response): string | undefined {
   const id = req.params.id;
@@ -448,6 +450,31 @@ export async function getDatasetDetails(req: Request, res: Response) {
     return res.status(500).json({
       status: "error",
       message: "An unexpected error occurred while retrieving the dataset.",
+    });
+  }
+}
+
+export async function validateDatasetData(req: Request, res: Response) {
+  const id = getDatasetId(req, res);
+  if (!id) return;
+
+  try {
+    const validation = await validateDataset(id);
+    return res.status(200).json({
+      status: "success",
+      ...validation,
+    });
+  } catch (error) {
+    if (error instanceof DatasetNotFoundError) {
+      return res.status(404).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+    console.error("Dataset validation error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "An unexpected error occurred while validating the dataset.",
     });
   }
 }
