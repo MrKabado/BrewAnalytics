@@ -2,6 +2,7 @@ import { Router, type ErrorRequestHandler } from "express";
 import multer from "multer";
 import {
   getDatasetDetails,
+  importDatasetCampaigns,
   importDatasetReferenceData,
   importDatasetSalesTransactions,
   listDatasetRecords,
@@ -71,6 +72,13 @@ router.post(
   uploadDatasetFile.single("file"),
   handleUploadError,
   importDatasetSalesTransactions,
+);
+router.post(
+  "/:id/campaigns",
+  requireAuth,
+  uploadDatasetFile.single("file"),
+  handleUploadError,
+  importDatasetCampaigns,
 );
 router.post(
   "/upload",

@@ -177,4 +177,58 @@ describe("dataset workbook preview endpoint", () => {
       /validated during import/,
     );
   });
+
+  it("recognizes Marketing Campaigns worksheets without classifying them as sales imports", async () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        [
+          "Campaign ID",
+          "Campaign Name",
+          "Promotion Type",
+          "Marketing Channel",
+          "Start Date",
+          "End Date",
+          "Marketing Cost",
+        ],
+        [
+          "C-1",
+          "Weekend",
+          "Discount",
+          "Online",
+          "2026-01-01",
+          "2026-01-02",
+          100,
+        ],
+      ]),
+      "Marketing Campaigns",
+    );
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([
+        new Uint8Array(
+          Buffer.from(
+            XLSX.write(workbook, { bookType: "xlsx", type: "buffer" }),
+          ),
+        ),
+      ]),
+      "campaigns.xlsx",
+    );
+    const response = await fetch(baseUrl, { method: "POST", body: form });
+    const payload = (await response.json()) as {
+      worksheets: Array<{
+        supportedBySalesImporter: boolean;
+        warnings: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.worksheets[0].supportedBySalesImporter, false);
+    assert.match(
+      payload.worksheets[0].warnings.join(" "),
+      /Marketing Campaigns worksheet structure recognized/,
+    );
+  });
 });

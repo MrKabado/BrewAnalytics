@@ -36,6 +36,16 @@ const TRANSACTION_PREVIEW_HEADERS = {
   customerId: ["customerid"],
 } as const;
 
+const CAMPAIGN_PREVIEW_HEADERS = {
+  campaignId: ["campaignid"],
+  campaignName: ["campaignname"],
+  promotionType: ["promotiontype"],
+  campaignChannel: ["marketingchannel", "campaignchannel", "channel"],
+  startDate: ["startdate"],
+  endDate: ["enddate"],
+  marketingCost: ["marketingcost"],
+} as const;
+
 export interface ExcelWorkbookPreview {
   fileName: string;
   worksheetCount: number;
@@ -223,6 +233,9 @@ function inspectWorksheet(
   );
   const normalizedName = name.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
   const transactionWorksheet = normalizedName === "salestransactions";
+  const namedCampaignWorksheet = ["marketingcampaigns", "campaigns"].includes(
+    normalizedName,
+  );
   const legacyMissingHeaders = SALES_CSV_HEADERS.filter(
     (header) => !headers.includes(header),
   );
@@ -236,6 +249,25 @@ function inspectWorksheet(
   const ambiguousTransactionHeaders = Object.entries(
     TRANSACTION_PREVIEW_HEADERS,
   )
+    .filter(
+      ([, aliases]) =>
+        aliases.reduce(
+          (count, alias) =>
+            count +
+            normalizedHeaders.filter((header) => header === alias).length,
+          0,
+        ) > 1,
+    )
+    .map(([field]) => field);
+  const campaignMissingHeaders = Object.entries(CAMPAIGN_PREVIEW_HEADERS)
+    .filter(
+      ([, aliases]) =>
+        !aliases.some((alias) => normalizedHeaders.includes(alias)),
+    )
+    .map(([field]) => field);
+  const campaignWorksheet =
+    namedCampaignWorksheet || campaignMissingHeaders.length === 0;
+  const ambiguousCampaignHeaders = Object.entries(CAMPAIGN_PREVIEW_HEADERS)
     .filter(
       ([, aliases]) =>
         aliases.reduce(
@@ -263,6 +295,25 @@ function inspectWorksheet(
   if (transactionWorksheet && ambiguousTransactionHeaders.length > 0) {
     warnings.push(
       `Ambiguous Sales Transactions headers found for: ${ambiguousTransactionHeaders.join(", ")}.`,
+    );
+  }
+  const campaignFormatRecognized =
+    campaignWorksheet &&
+    campaignMissingHeaders.length === 0 &&
+    ambiguousCampaignHeaders.length === 0;
+  if (campaignWorksheet && ambiguousCampaignHeaders.length > 0) {
+    warnings.push(
+      `Ambiguous Marketing Campaigns headers found for: ${ambiguousCampaignHeaders.join(", ")}.`,
+    );
+  }
+  if (campaignWorksheet && campaignMissingHeaders.length > 0) {
+    warnings.push(
+      `Required campaign headers missing: ${campaignMissingHeaders.join(", ")}.`,
+    );
+  }
+  if (campaignFormatRecognized) {
+    warnings.push(
+      "Marketing Campaigns worksheet structure recognized; campaign values are validated during import.",
     );
   }
 

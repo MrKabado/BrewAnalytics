@@ -38,6 +38,15 @@ import {
   importSalesTransactions,
   SalesTransactionImportError,
 } from "../services/sales-transaction.service";
+import {
+  CampaignConflictError,
+  importCampaigns,
+  isCampaignUniqueConflict,
+} from "../services/campaign.service";
+import {
+  CampaignParseError,
+  parseCampaignWorkbook,
+} from "../utils/campaign.parser";
 
 function getDatasetId(req: Request, res: Response): string | undefined {
   const id = req.params.id;
@@ -299,6 +308,78 @@ export async function importDatasetSalesTransactions(
       status: "error",
       message:
         "An unexpected error occurred while importing sales transactions.",
+    });
+  }
+}
+
+export async function importDatasetCampaigns(req: Request, res: Response) {
+  const id = getDatasetId(req, res);
+  if (!id) return;
+
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "An Excel workbook is required in the 'file' field.",
+    });
+  }
+
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  if (extension !== ".xlsx" && extension !== ".xls") {
+    return res.status(415).json({
+      status: "error",
+      message: "Marketing Campaigns import supports .xlsx and .xls files only.",
+    });
+  }
+
+  try {
+    const workbook = parseCampaignWorkbook(
+      req.file.buffer,
+      req.file.originalname,
+    );
+    const result = await importCampaigns(
+      id,
+      workbook.worksheetName,
+      workbook.campaigns,
+    );
+    return res.status(201).json({
+      status: "success",
+      message: "Marketing Campaigns imported successfully.",
+      detectedWorksheets: workbook.worksheetNames,
+      ...result,
+    });
+  } catch (error) {
+    if (error instanceof CampaignParseError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.worksheetErrors,
+      });
+    }
+    if (error instanceof CampaignConflictError) {
+      return res.status(409).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.conflicts,
+      });
+    }
+    if (error instanceof ReferenceDatasetNotFoundError) {
+      return res.status(404).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+    if (isCampaignUniqueConflict(error)) {
+      return res.status(409).json({
+        status: "error",
+        message:
+          "A campaign ID already exists in this dataset. Existing campaigns were not overwritten.",
+      });
+    }
+
+    console.error("Dataset campaign import error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "An unexpected error occurred while importing campaigns.",
     });
   }
 }

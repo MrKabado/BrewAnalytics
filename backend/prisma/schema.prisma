@@ -124,7 +124,10 @@ model MarketingCampaign {
   endDate            DateTime @db.Date
   marketingCost      Decimal  @db.Decimal(12, 2)
   discountPercentage Decimal  @db.Decimal(5, 2)
+  discountType       String?
+  discountValue      Decimal? @db.Decimal(12, 2)
   campaignChannel    String
+  status             String?
 
   dataset      Dataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   salesRecords SalesRecord[]
