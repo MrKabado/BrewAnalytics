@@ -2,6 +2,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly payload?: unknown
   ) {
     super(message)
     this.name = "ApiError"
@@ -13,11 +14,19 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
   notifyUnauthorized?: boolean
 }
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "")
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(
+  /\/+$/,
+  ""
+)
 
 export async function apiRequest<T>(
   path: string,
-  { body, headers, notifyUnauthorized = true, ...options }: ApiRequestOptions = {},
+  {
+    body,
+    headers,
+    notifyUnauthorized = true,
+    ...options
+  }: ApiRequestOptions = {}
 ): Promise<T> {
   if (!apiBaseUrl) {
     throw new ApiError("NEXT_PUBLIC_API_BASE_URL is not configured.", 0)
@@ -33,17 +42,20 @@ export async function apiRequest<T>(
 
   let response: Response
   try {
-    response = await fetch(`${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`, {
-      ...options,
-      headers: requestHeaders,
-      credentials: "include",
-      body:
-        body === undefined
-          ? undefined
-          : isFormData
-            ? body
-            : JSON.stringify(body),
-    })
+    response = await fetch(
+      `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`,
+      {
+        ...options,
+        headers: requestHeaders,
+        credentials: "include",
+        body:
+          body === undefined
+            ? undefined
+            : isFormData
+              ? body
+              : JSON.stringify(body),
+      }
+    )
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error
@@ -58,7 +70,7 @@ export async function apiRequest<T>(
   } catch {
     throw new ApiError(
       `The API returned an invalid response (HTTP ${response.status}).`,
-      response.status,
+      response.status
     )
   }
 
@@ -79,7 +91,7 @@ export async function apiRequest<T>(
       window.dispatchEvent(new Event("auth:unauthorized"))
     }
 
-    throw new ApiError(message, response.status)
+    throw new ApiError(message, response.status, payload)
   }
 
   return payload as T

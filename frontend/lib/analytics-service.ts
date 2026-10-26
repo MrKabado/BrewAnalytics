@@ -5,6 +5,12 @@ import type {
   SalesOverviewResponse,
   SalesTrendsResponse,
 } from "@/lib/analytics-types"
+import type {
+  CampaignPeriodAnalyticsResponse,
+  CustomerPurchaseAnalyticsResponse,
+  DailySalesSummaryResponse,
+  ProductCatalogResponse,
+} from "@/lib/business-analytics-types"
 
 function createQuery(params: Record<string, string | undefined>) {
   const query = new URLSearchParams()
@@ -17,27 +23,29 @@ function createQuery(params: Record<string, string | undefined>) {
 
 export function getSalesOverview(datasetId?: string) {
   return apiRequest<SalesOverviewResponse>(
-    `/api/analytics/overview${createQuery({ datasetId })}`,
+    `/api/analytics/overview${createQuery({ datasetId })}`
   )
 }
 
-export function getProductPerformance(options: {
-  datasetId?: string
-  category?: string
-  topN?: number
-} = {}) {
+export function getProductPerformance(
+  options: {
+    datasetId?: string
+    category?: string
+    topN?: number
+  } = {}
+) {
   return apiRequest<ProductPerformanceResponse>(
     `/api/analytics/products${createQuery({
       datasetId: options.datasetId,
       category: options.category,
       topN: options.topN === undefined ? undefined : String(options.topN),
-    })}`,
+    })}`
   )
 }
 
 export function getCategoryPerformance(datasetId?: string) {
   return apiRequest<CategoryPerformanceResponse>(
-    `/api/analytics/categories${createQuery({ datasetId })}`,
+    `/api/analytics/categories${createQuery({ datasetId })}`
   )
 }
 
@@ -53,6 +61,39 @@ export function getSalesTrends(options: {
       aggregation: options.aggregation,
       startDate: options.startDate,
       endDate: options.endDate,
-    })}`,
+    })}`
+  )
+}
+
+export function getDailySalesSummary(options: {
+  datasetId?: string
+  startDate?: string
+  endDate?: string
+}) {
+  return apiRequest<DailySalesSummaryResponse>(
+    `/api/analytics/daily-summary${createQuery({
+      datasetId: options.datasetId,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      aggregation: "daily",
+    })}`
+  )
+}
+
+export function getCampaignPeriodAnalytics(datasetId?: string) {
+  return apiRequest<CampaignPeriodAnalyticsResponse>(
+    `/api/analytics/campaigns${createQuery({ datasetId })}`
+  )
+}
+
+export function getCustomerPurchaseAnalytics(datasetId?: string) {
+  return apiRequest<CustomerPurchaseAnalyticsResponse>(
+    `/api/analytics/customers${createQuery({ datasetId })}`
+  )
+}
+
+export function getProductCatalogPerformance(datasetId: string) {
+  return apiRequest<ProductCatalogResponse>(
+    `/api/analytics/products/catalog${createQuery({ datasetId })}`
   )
 }

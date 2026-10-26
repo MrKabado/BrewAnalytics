@@ -14,13 +14,32 @@ import {
   X,
 } from "lucide-react"
 import { toast } from "sonner"
-import { EmptyState, PageHeading, Panel } from "@/components/analytics/analytics-ui"
+import {
+  EmptyState,
+  PageHeading,
+  Panel,
+} from "@/components/analytics/analytics-ui"
 import { useAnalyticsScope } from "@/components/analytics/analytics-scope"
-import { deleteDataset, listDatasets, uploadDataset } from "@/lib/dataset-service"
-import type { Dataset } from "@/lib/dataset-types"
+import {
+  deleteDataset,
+  listDatasets,
+  previewDatasetWorkbook,
+  uploadDataset,
+} from "@/lib/dataset-service"
+import type { Dataset, WorkbookPreviewResponse } from "@/lib/dataset-types"
 
 const PAGE_SIZE = 20
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+const LEGACY_SALES_HEADERS = [
+  "transactionId",
+  "saleDate",
+  "productName",
+  "category",
+  "quantity",
+  "unitPrice",
+  "totalAmount",
+  "paymentMethod",
+]
 
 function formatDate(value: string) {
   const date = new Date(value)
@@ -34,7 +53,9 @@ function formatDate(value: string) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "An unexpected error occurred."
+  return error instanceof Error
+    ? error.message
+    : "An unexpected error occurred."
 }
 
 export default function DatasetsPage() {
@@ -52,6 +73,9 @@ export default function DatasetsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [dialogError, setDialogError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [workbookPreview, setWorkbookPreview] =
+    useState<WorkbookPreviewResponse | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -69,7 +93,7 @@ export default function DatasetsPage() {
         if (!active) return
         setLoadError(errorMessage(error))
         setLoading(false)
-      },
+      }
     )
     return () => {
       active = false
@@ -82,14 +106,18 @@ export default function DatasetsPage() {
         const queryMatches = `${dataset.name} ${dataset.originalFileName}`
           .toLowerCase()
           .includes(search.trim().toLowerCase())
-        const extension = dataset.originalFileName.split(".").pop()?.toLowerCase()
+        const extension = dataset.originalFileName
+          .split(".")
+          .pop()
+          ?.toLowerCase()
         const typeMatches =
           fileType === "all" ||
           (fileType === "csv" && extension === "csv") ||
-          (fileType === "excel" && (extension === "xlsx" || extension === "xls"))
+          (fileType === "excel" &&
+            (extension === "xlsx" || extension === "xls"))
         return queryMatches && typeMatches
       }),
-    [datasets, fileType, search],
+    [datasets, fileType, search]
   )
 
   const retry = useCallback(() => {
@@ -100,6 +128,7 @@ export default function DatasetsPage() {
 
   function openUpload() {
     setSelectedFile(null)
+    setWorkbookPreview(null)
     setDialogError("")
     setDialog("upload")
   }
@@ -111,9 +140,10 @@ export default function DatasetsPage() {
   }
 
   function closeDialog() {
-    if (busy) return
+    if (busy || previewBusy) return
     setDialog(null)
     setSelectedFile(null)
+    setWorkbookPreview(null)
     setSelectedDataset(null)
     setDialogError("")
   }
@@ -127,6 +157,17 @@ export default function DatasetsPage() {
     }
     if (selectedFile.size > MAX_UPLOAD_SIZE) {
       setDialogError("The uploaded file must be 10 MB or smaller.")
+      return
+    }
+    if (
+      extension !== "csv" &&
+      (!workbookPreview ||
+        workbookPreview.worksheetCount !== 1 ||
+        !canCreateDatasetFromWorkbook(workbookPreview))
+    ) {
+      setDialogError(
+        "Preview the workbook and resolve all sales-format warnings before creating a dataset."
+      )
       return
     }
 
@@ -148,6 +189,44 @@ export default function DatasetsPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  async function handlePreview() {
+    if (!selectedFile || previewBusy || busy) return
+    const extension = selectedFile.name.split(".").pop()?.toLowerCase()
+    if (!extension || !["xlsx", "xls"].includes(extension)) {
+      setDialogError("Workbook preview is available for XLSX and XLS files.")
+      return
+    }
+    if (selectedFile.size > MAX_UPLOAD_SIZE) {
+      setDialogError("The uploaded file must be 10 MB or smaller.")
+      return
+    }
+    setPreviewBusy(true)
+    setDialogError("")
+    setWorkbookPreview(null)
+    try {
+      setWorkbookPreview(await previewDatasetWorkbook(selectedFile))
+    } catch (error) {
+      setDialogError(errorMessage(error))
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
+  const selectedExtension = selectedFile?.name.split(".").pop()?.toLowerCase()
+  const canCreateFromWorkbook =
+    selectedExtension === "csv" ||
+    (Boolean(workbookPreview) &&
+      workbookPreview?.worksheetCount === 1 &&
+      Boolean(workbookPreview && canCreateDatasetFromWorkbook(workbookPreview)))
+
+  function canCreateDatasetFromWorkbook(preview: WorkbookPreviewResponse) {
+    const worksheet = preview.worksheets[0]
+    return Boolean(
+      worksheet?.supportedBySalesImporter &&
+      LEGACY_SALES_HEADERS.every((header) => worksheet.headers.includes(header))
+    )
   }
 
   async function handleDelete() {
@@ -221,7 +300,9 @@ export default function DatasetsPage() {
         {loadError ? (
           <div className="p-8 text-center">
             <h2 className="font-semibold">Could not load datasets</h2>
-            <p role="alert" className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+            <p role="alert" className="mt-2 text-sm text-muted-foreground">
+              {loadError}
+            </p>
             <button
               type="button"
               onClick={retry}
@@ -231,9 +312,16 @@ export default function DatasetsPage() {
             </button>
           </div>
         ) : loading ? (
-          <div aria-label="Loading datasets" aria-busy="true" className="space-y-3 p-5">
+          <div
+            aria-label="Loading datasets"
+            aria-busy="true"
+            className="space-y-3 p-5"
+          >
             {Array.from({ length: 5 }, (_, index) => (
-              <div key={index} className="h-14 animate-pulse rounded-lg bg-muted/70" />
+              <div
+                key={index}
+                className="h-14 animate-pulse rounded-lg bg-muted/70"
+              />
             ))}
           </div>
         ) : visible.length ? (
@@ -244,29 +332,49 @@ export default function DatasetsPage() {
                   <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
                     <th className="px-5 py-3 font-medium">Dataset</th>
                     <th className="px-4 py-3 font-medium">Uploaded</th>
-                    <th className="px-4 py-3 text-right font-medium">Records</th>
-                    <th className="px-5 py-3 text-right font-medium">Actions</th>
+                    <th className="px-4 py-3 text-right font-medium">
+                      Records
+                    </th>
+                    <th className="px-5 py-3 text-right font-medium">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {visible.map((dataset) => (
                     <tr key={dataset.id} className="hover:bg-muted/30">
                       <td className="px-5 py-3.5">
-                        <Link href={`/datasets/${dataset.id}`} className="flex items-center gap-3">
+                        <Link
+                          href={`/datasets/${dataset.id}`}
+                          className="flex items-center gap-3"
+                        >
                           <span className="flex size-9 items-center justify-center rounded-lg bg-secondary text-primary">
                             <FileSpreadsheet className="size-4" />
                           </span>
                           <span className="min-w-0">
-                            <span className="block font-medium">{dataset.name}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{dataset.originalFileName}</span>
+                            <span className="block font-medium">
+                              {dataset.name}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {dataset.originalFileName}
+                            </span>
                           </span>
                         </Link>
                       </td>
-                      <td className="px-4 py-3.5 text-muted-foreground">{formatDate(dataset.uploadedAt)}</td>
-                      <td className="px-4 py-3.5 text-right tabular-nums">{dataset.recordCount.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 text-muted-foreground">
+                        {formatDate(dataset.uploadedAt)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right tabular-nums">
+                        {dataset.recordCount.toLocaleString()}
+                      </td>
                       <td className="px-5 py-3.5">
                         <div className="flex justify-end gap-1">
-                          <Link href={`/datasets/${dataset.id}`} className="rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:bg-secondary">View</Link>
+                          <Link
+                            href={`/datasets/${dataset.id}`}
+                            className="rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:bg-secondary"
+                          >
+                            View
+                          </Link>
                           <button
                             type="button"
                             aria-label={`Delete ${dataset.name}`}
@@ -284,24 +392,35 @@ export default function DatasetsPage() {
             </div>
             <div className="flex flex-col gap-3 border-t border-border px-5 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <span>
-                Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} datasets
-                {search || fileType !== "all" ? ` · ${visible.length} match this page` : ""}
+                Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, total)} of {total} datasets
+                {search || fileType !== "all"
+                  ? ` · ${visible.length} match this page`
+                  : ""}
               </span>
               <div className="flex items-center gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   disabled={page <= 1 || loading}
-                  onClick={() => { setLoading(true); setPage((value) => value - 1) }}
+                  onClick={() => {
+                    setLoading(true)
+                    setPage((value) => value - 1)
+                  }}
                   aria-label="Previous page"
                   className="rounded-md border border-border p-1.5 disabled:opacity-40"
                 >
                   <ChevronLeft className="size-4" />
                 </button>
-                <span>Page {page} of {Math.max(totalPages, 1)}</span>
+                <span>
+                  Page {page} of {Math.max(totalPages, 1)}
+                </span>
                 <button
                   type="button"
                   disabled={page >= totalPages || loading}
-                  onClick={() => { setLoading(true); setPage((value) => value + 1) }}
+                  onClick={() => {
+                    setLoading(true)
+                    setPage((value) => value + 1)
+                  }}
                   aria-label="Next page"
                   className="rounded-md border border-border p-1.5 disabled:opacity-40"
                 >
@@ -313,7 +432,11 @@ export default function DatasetsPage() {
         ) : (
           <EmptyState
             icon={FileSpreadsheet}
-            title={search || fileType !== "all" ? "No datasets found on this page" : "No datasets yet"}
+            title={
+              search || fileType !== "all"
+                ? "No datasets found on this page"
+                : "No datasets yet"
+            }
             description={
               search || fileType !== "all"
                 ? "Try a different search or file type. Search only applies to the current page."
@@ -323,16 +446,24 @@ export default function DatasetsPage() {
         )}
       </Panel>
       <p className="mt-4 text-xs text-muted-foreground">
-        Dataset information is loaded from the BrewAnalytics API. File type and text filters apply to the current page only.
+        Dataset information is loaded from the BrewAnalytics API. File type and
+        text filters apply to the current page only.
       </p>
 
       {dialog && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-foreground/30 p-4"
           role="presentation"
-          onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog() }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDialog()
+          }}
         >
-          <section role="dialog" aria-modal="true" aria-labelledby="dataset-dialog-title" className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-6">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dataset-dialog-title"
+            className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-6"
+          >
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="dataset-dialog-title" className="text-lg font-semibold">
@@ -344,7 +475,13 @@ export default function DatasetsPage() {
                     : `Delete “${selectedDataset?.name}” and its associated sales records? This cannot be undone.`}
                 </p>
               </div>
-              <button type="button" disabled={busy} onClick={closeDialog} aria-label="Close dialog" className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-50">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={closeDialog}
+                aria-label="Close dialog"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted disabled:opacity-50"
+              >
                 <X className="size-5" />
               </button>
             </div>
@@ -356,12 +493,17 @@ export default function DatasetsPage() {
                     event.preventDefault()
                     setDialogError("")
                     setSelectedFile(event.dataTransfer.files[0] ?? null)
+                    setWorkbookPreview(null)
                   }}
                   className="flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-primary/40 bg-secondary/30 px-5 text-center hover:bg-secondary/50"
                 >
                   <UploadCloud className="size-8 text-primary" />
-                  <span className="mt-3 text-sm font-semibold">{selectedFile?.name ?? "Choose a file or drop it here"}</span>
-                  <span className="mt-1 text-xs text-muted-foreground">CSV, XLSX, or XLS · maximum 10 MB</span>
+                  <span className="mt-3 text-sm font-semibold">
+                    {selectedFile?.name ?? "Choose a file or drop it here"}
+                  </span>
+                  <span className="mt-1 text-xs text-muted-foreground">
+                    CSV, XLSX, or XLS · maximum 10 MB
+                  </span>
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
@@ -370,25 +512,173 @@ export default function DatasetsPage() {
                     onChange={(event) => {
                       setDialogError("")
                       setSelectedFile(event.target.files?.[0] ?? null)
+                      setWorkbookPreview(null)
                     }}
                   />
                 </label>
-                {selectedFile && <p className="mt-3 text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(0)} KB selected.</p>}
-                {dialogError && <p role="alert" className="mt-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{dialogError}</p>}
+                {selectedFile && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {(selectedFile.size / 1024).toFixed(0)} KB selected.
+                  </p>
+                )}
+                {selectedExtension !== "csv" && selectedFile && (
+                  <button
+                    type="button"
+                    disabled={busy || previewBusy}
+                    onClick={() => void handlePreview()}
+                    className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    {previewBusy && (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    )}
+                    {previewBusy
+                      ? "Previewing workbook…"
+                      : "Preview Excel workbook"}
+                  </button>
+                )}
+                {workbookPreview && (
+                  <div className="mt-4 max-h-72 space-y-3 overflow-y-auto rounded-lg border border-border p-3">
+                    <div>
+                      <p className="text-sm font-semibold">
+                        {workbookPreview.fileName} ·{" "}
+                        {workbookPreview.worksheetCount} worksheet
+                        {workbookPreview.worksheetCount === 1 ? "" : "s"}
+                      </p>
+                      {workbookPreview.worksheetCount > 1 && (
+                        <p className="mt-1 text-xs text-amber-800">
+                          Multi-sheet workbooks cannot create a dataset through
+                          the legacy sales upload. Create a dataset from a CSV
+                          or single-sheet sales workbook, then use its details
+                          page to import Products/Customers, Sales Transactions,
+                          or Marketing Campaigns.
+                        </p>
+                      )}
+                    </div>
+                    {workbookPreview.worksheets.map((sheet) => (
+                      <section
+                        key={sheet.name}
+                        className="rounded-md bg-muted/40 p-3 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold">{sheet.name}</span>
+                          <span>
+                            {sheet.rowCount.toLocaleString()} rows ·{" "}
+                            {canCreateDatasetFromWorkbook(workbookPreview)
+                              ? "valid sales format for dataset creation"
+                              : sheet.supportedBySalesImporter
+                                ? "supported import worksheet; use a dataset details page"
+                                : "not supported for dataset creation"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">
+                          Headers:{" "}
+                          {sheet.headers.length
+                            ? sheet.headers.join(", ")
+                            : "none detected"}
+                        </p>
+                        {sheet.warnings.length > 0 && (
+                          <ul className="mt-1 list-inside list-disc space-y-1 text-amber-800">
+                            {sheet.warnings.map((warning) => (
+                              <li key={warning}>{warning}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {sheet.previewRows.length > 0 && (
+                          <div className="mt-2 overflow-x-auto">
+                            <table className="min-w-full text-left">
+                              <thead>
+                                <tr>
+                                  {sheet.headers.map((header, index) => (
+                                    <th
+                                      key={`${header}-${index}`}
+                                      className="px-2 py-1.5"
+                                    >
+                                      {header || `Column ${index + 1}`}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sheet.previewRows.map((row, rowIndex) => (
+                                  <tr key={rowIndex}>
+                                    {sheet.headers.map(
+                                      (_header, columnIndex) => (
+                                        <td
+                                          key={columnIndex}
+                                          className="max-w-40 truncate px-2 py-1.5"
+                                        >
+                                          {row[columnIndex] ?? ""}
+                                        </td>
+                                      )
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                )}
+                {dialogError && (
+                  <p
+                    role="alert"
+                    className="mt-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+                  >
+                    {dialogError}
+                  </p>
+                )}
                 <div className="mt-5 flex justify-end gap-2">
-                  <button type="button" disabled={busy} onClick={closeDialog} className="h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancel</button>
-                  <button type="button" disabled={!selectedFile || busy} onClick={() => void handleUpload()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+                  <button
+                    type="button"
+                    disabled={busy || previewBusy}
+                    onClick={closeDialog}
+                    className="h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      !selectedFile ||
+                      !canCreateFromWorkbook ||
+                      busy ||
+                      previewBusy
+                    }
+                    onClick={() => void handleUpload()}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                  >
                     {busy && <LoaderCircle className="size-4 animate-spin" />}
-                    {busy ? "Uploading…" : "Upload dataset"}
+                    {busy ? "Uploading…" : "Create dataset"}
                   </button>
                 </div>
               </div>
             ) : (
               <>
-                {dialogError && <p role="alert" className="mt-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{dialogError}</p>}
+                {dialogError && (
+                  <p
+                    role="alert"
+                    className="mt-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+                  >
+                    {dialogError}
+                  </p>
+                )}
                 <div className="mt-5 flex justify-end gap-2">
-                  <button type="button" disabled={busy} onClick={closeDialog} className="h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted disabled:opacity-50">Cancel</button>
-                  <button type="button" disabled={busy || !selectedDataset} onClick={() => void handleDelete()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-destructive px-3 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={closeDialog}
+                    className="h-9 rounded-lg border border-input px-3 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !selectedDataset}
+                    onClick={() => void handleDelete()}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-destructive px-3 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
+                  >
                     {busy && <LoaderCircle className="size-4 animate-spin" />}
                     {busy ? "Deleting…" : "Delete dataset"}
                   </button>

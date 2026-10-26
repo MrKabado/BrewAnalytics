@@ -4,12 +4,11 @@ export type RecommendationCategory =
   | "product_demand"
   | "sales_trends"
   | "category_performance"
+  | "marketing_analysis"
 
 export type RecommendationPriority = "low" | "medium" | "high"
 export type RecommendationBasis =
-  | "historical"
-  | "forecast"
-  | "historical_and_forecast"
+  "historical" | "forecast" | "historical_and_forecast"
 
 export type BusinessRecommendation = {
   id: string

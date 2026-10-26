@@ -29,6 +29,7 @@ const categoryLabels: Record<RecommendationCategory, string> = {
   product_demand: "Product demand",
   sales_trends: "Sales trends",
   category_performance: "Category performance",
+  marketing_analysis: "Marketing analysis",
 }
 
 const recommendationCategories: RecommendationCategory[] = [
@@ -37,6 +38,7 @@ const recommendationCategories: RecommendationCategory[] = [
   "product_demand",
   "sales_trends",
   "category_performance",
+  "marketing_analysis",
 ]
 
 const priorityTones: Record<
@@ -100,7 +102,9 @@ function RecommendationCard({
               <dt className="text-xs text-muted-foreground">
                 {formatEvidenceLabel(key)}
               </dt>
-              <dd className="break-words text-sm font-medium">{String(value)}</dd>
+              <dd className="text-sm font-medium break-words">
+                {String(value)}
+              </dd>
             </div>
           ))}
         </dl>
@@ -115,12 +119,17 @@ function RecommendationCard({
 
 export default function PrescriptiveAnalyticsPage() {
   const [aggregation, setAggregation] = useState<"daily" | "monthly">("monthly")
-  const [priority, setPriority] = useState<RecommendationPriority | "all">("all")
-  const [category, setCategory] = useState<RecommendationCategory | "all">("all")
+  const [priority, setPriority] = useState<RecommendationPriority | "all">(
+    "all"
+  )
+  const [category, setCategory] = useState<RecommendationCategory | "all">(
+    "all"
+  )
   const [recommendationResponse, setRecommendationResponse] =
     useState<RecommendationsResponse | null>(null)
-  const [summary, setSummary] =
-    useState<RecommendationSummaryResponse | null>(null)
+  const [summary, setSummary] = useState<RecommendationSummaryResponse | null>(
+    null
+  )
   const [loadedKey, setLoadedKey] = useState("")
   const [recommendationError, setRecommendationError] = useState("")
   const [summaryError, setSummaryError] = useState("")
@@ -141,34 +150,32 @@ export default function PrescriptiveAnalyticsPage() {
     void Promise.allSettled([
       getRecommendations({ datasetId, aggregation }),
       getRecommendationSummary({ datasetId, aggregation }),
-    ]).then(
-      ([recommendationResult, summaryResult]) => {
-        if (!active) return
-        if (recommendationResult.status === "fulfilled") {
-          setRecommendationResponse(recommendationResult.value)
-          setRecommendationError("")
-        } else {
-          setRecommendationError(
-            errorMessage(
-              recommendationResult.reason,
-              "Could not load business recommendations.",
-            ),
+    ]).then(([recommendationResult, summaryResult]) => {
+      if (!active) return
+      if (recommendationResult.status === "fulfilled") {
+        setRecommendationResponse(recommendationResult.value)
+        setRecommendationError("")
+      } else {
+        setRecommendationError(
+          errorMessage(
+            recommendationResult.reason,
+            "Could not load business recommendations."
           )
-        }
-        if (summaryResult.status === "fulfilled") {
-          setSummary(summaryResult.value)
-          setSummaryError("")
-        } else {
-          setSummaryError(
-            errorMessage(
-              summaryResult.reason,
-              "Could not load the recommendation summary.",
-            ),
+        )
+      }
+      if (summaryResult.status === "fulfilled") {
+        setSummary(summaryResult.value)
+        setSummaryError("")
+      } else {
+        setSummaryError(
+          errorMessage(
+            summaryResult.reason,
+            "Could not load the recommendation summary."
           )
-        }
-        setLoadedKey(requestKey)
-      },
-    )
+        )
+      }
+      setLoadedKey(requestKey)
+    })
     return () => {
       active = false
     }
@@ -180,22 +187,28 @@ export default function PrescriptiveAnalyticsPage() {
       (recommendationResponse?.recommendations ?? []).filter(
         (item) =>
           (priority === "all" || item.priority === priority) &&
-          (category === "all" || item.category === category),
+          (category === "all" || item.category === category)
       ),
-    [category, priority, recommendationResponse],
+    [category, priority, recommendationResponse]
   )
   const availableCategories = useMemo(
     () =>
-      [...new Set(recommendationResponse?.recommendations.map((item) => item.category) ?? [])]
+      [
+        ...new Set(
+          recommendationResponse?.recommendations.map(
+            (item) => item.category
+          ) ?? []
+        ),
+      ]
         .sort()
         .map((item) => ({
           label: categoryLabels[item],
           value: item,
         })),
-    [recommendationResponse],
+    [recommendationResponse]
   )
   const selectedDatasetName = datasetId
-    ? datasets.find((dataset) => dataset.id === datasetId)?.name ?? datasetId
+    ? (datasets.find((dataset) => dataset.id === datasetId)?.name ?? datasetId)
     : "All datasets"
   const displayedError = loading
     ? ""
@@ -220,7 +233,9 @@ export default function PrescriptiveAnalyticsPage() {
                   value: dataset.id,
                 })),
               ]}
-              className={datasetsLoading ? "pointer-events-none opacity-60" : undefined}
+              className={
+                datasetsLoading ? "pointer-events-none opacity-60" : undefined
+              }
             />
             <SelectControl
               label="Recommendation period grouping"
@@ -313,7 +328,7 @@ export default function PrescriptiveAnalyticsPage() {
         <div className="mb-5 rounded-xl border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Recommendations by category</h2>
           {recommendationCategories.some(
-            (categoryKey) => summary.byCategory[categoryKey] !== undefined,
+            (categoryKey) => summary.byCategory[categoryKey] !== undefined
           ) ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {recommendationCategories.flatMap((categoryKey) => {
@@ -321,10 +336,10 @@ export default function PrescriptiveAnalyticsPage() {
                 return count === undefined
                   ? []
                   : [
-                    <Badge key={categoryKey} tone="accent">
-                      {categoryLabels[categoryKey]} · {count}
-                    </Badge>,
-                  ]
+                      <Badge key={categoryKey} tone="accent">
+                        {categoryLabels[categoryKey]} · {count}
+                      </Badge>,
+                    ]
               })}
             </div>
           ) : (
@@ -360,8 +375,8 @@ export default function PrescriptiveAnalyticsPage() {
               item={item}
               datasetName={
                 item.datasetId
-                  ? datasets.find((dataset) => dataset.id === item.datasetId)
-                      ?.name ?? item.datasetId
+                  ? (datasets.find((dataset) => dataset.id === item.datasetId)
+                      ?.name ?? item.datasetId)
                   : selectedDatasetName
               }
             />
@@ -384,7 +399,9 @@ export default function PrescriptiveAnalyticsPage() {
         </Panel>
       )}
 
-      {!loading && !recommendationError && recommendationResponse?.notes.length ? (
+      {!loading &&
+      !recommendationError &&
+      recommendationResponse?.notes.length ? (
         <div className="mt-4 space-y-1 text-xs text-muted-foreground">
           {recommendationResponse.notes.map((note) => (
             <p key={note}>{note}</p>
