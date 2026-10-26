@@ -2,6 +2,7 @@ import { Router, type ErrorRequestHandler } from "express";
 import multer from "multer";
 import {
   getDatasetDetails,
+  importDatasetReferenceData,
   listDatasetRecords,
   listDatasets,
   previewDatasetWorkbook,
@@ -50,6 +51,13 @@ router.post(
   uploadDatasetFile.single("file"),
   handleUploadError,
   previewDatasetWorkbook
+);
+router.post(
+  "/:id/reference-data",
+  requireAuth,
+  uploadDatasetFile.single("file"),
+  handleUploadError,
+  importDatasetReferenceData
 );
 router.post(
   "/upload",

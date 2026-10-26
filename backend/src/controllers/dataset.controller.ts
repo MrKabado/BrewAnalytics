@@ -14,10 +14,20 @@ import {
   getDatasets,
 } from "../services/dataset.service";
 import {
+  importReferenceData,
+  isReferenceUniqueConflict,
+  ReferenceDatasetNotFoundError,
+  ReferenceDataConflictError,
+} from "../services/reference-data.service";
+import {
   parseDatasetRecordFilters,
   parsePaginationParams,
 } from "../utils/dataset.query";
 import { DatasetValidationError } from "../utils/dataset.validation";
+import {
+  parseReferenceWorkbook,
+  ReferenceDataParseError,
+} from "../utils/reference-data.parser";
 
 function getDatasetId(req: Request, res: Response): string | undefined {
   const id = req.params.id;
@@ -108,6 +118,93 @@ export async function previewDatasetWorkbook(req: Request, res: Response) {
     return res.status(500).json({
       status: "error",
       message: "An unexpected error occurred while previewing the workbook.",
+    });
+  }
+}
+
+export async function importDatasetReferenceData(req: Request, res: Response) {
+  const id = getDatasetId(req, res);
+  if (!id) return;
+
+  if (!req.file) {
+    return res.status(400).json({
+      status: "error",
+      message: "An Excel workbook is required in the 'file' field.",
+    });
+  }
+
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  if (extension !== ".xlsx" && extension !== ".xls") {
+    return res.status(415).json({
+      status: "error",
+      message: "Products and Customers import supports .xlsx and .xls files only.",
+    });
+  }
+
+  try {
+    const parsed = parseReferenceWorkbook(
+      req.file.buffer,
+      req.file.originalname
+    );
+    const result = await importReferenceData(id, parsed);
+    return res.status(201).json({
+      status: "success",
+      message: "Reference data imported successfully.",
+      ...result,
+    });
+  } catch (error) {
+    if (error instanceof ExcelParseError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+
+    if (error instanceof ReferenceDataParseError) {
+      return res.status(400).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.worksheetErrors.map((worksheet) => ({
+          worksheet: worksheet.worksheet,
+          recordsCreated: 0,
+          rejectedRows: worksheet.rejectedRows,
+          errors: worksheet.errors,
+        })),
+      });
+    }
+
+    if (error instanceof ReferenceDataConflictError) {
+      return res.status(409).json({
+        status: "error",
+        message: error.message,
+        worksheets: error.conflicts.map((conflict) => ({
+          worksheet: conflict.worksheet,
+          recordsCreated: 0,
+          rejectedRows: conflict.rejectedRows,
+          errors: conflict.errors,
+        })),
+      });
+    }
+
+    if (error instanceof ReferenceDatasetNotFoundError) {
+      return res.status(404).json({
+        status: "error",
+        message: error.message,
+      });
+    }
+
+    if (isReferenceUniqueConflict(error)) {
+      return res.status(409).json({
+        status: "error",
+        message:
+          "A Product or Customer identifier already exists in this dataset. Existing records were not overwritten.",
+      });
+    }
+
+    console.error("Dataset reference data import error:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "An unexpected error occurred while importing reference data.",
     });
   }
 }

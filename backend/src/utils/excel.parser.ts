@@ -68,7 +68,10 @@ function cellToString(value: unknown): string {
   return String(value);
 }
 
-function readWorkbook(buffer: Buffer, fileName: string): XLSX.WorkBook {
+export function readExcelWorkbook(
+  buffer: Buffer,
+  fileName: string
+): XLSX.WorkBook {
   const extension = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
 
   if (
@@ -291,7 +294,7 @@ export function inspectSalesExcel(
   buffer: Buffer,
   fileName: string
 ): ExcelWorkbookPreview {
-  const workbook = readWorkbook(buffer, fileName);
+  const workbook = readExcelWorkbook(buffer, fileName);
   const sheetNames = getWorkbookSheetNames(workbook);
 
   return {
@@ -307,7 +310,7 @@ export function parseSalesExcel(
   buffer: Buffer,
   fileName: string
 ): SalesCsvRow[] {
-  const workbook = readWorkbook(buffer, fileName);
+  const workbook = readExcelWorkbook(buffer, fileName);
   const sheetNames = getWorkbookSheetNames(workbook);
   const inspectedWorksheets = sheetNames.map((name) =>
     inspectWorksheet(name, workbook.Sheets[name])

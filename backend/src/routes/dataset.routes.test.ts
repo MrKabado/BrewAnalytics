@@ -37,6 +37,7 @@ describe("dataset route authentication", () => {
     const responses = await Promise.all([
       fetch(baseUrl),
       fetch(`${baseUrl}/preview`, { method: "POST" }),
+      fetch(`${baseUrl}/not-a-dataset/reference-data`, { method: "POST" }),
       fetch(`${baseUrl}/unknown-id`),
       fetch(`${baseUrl}/unknown-id/records`),
       fetch(`${baseUrl}/unknown-id`, { method: "DELETE" }),
@@ -44,7 +45,7 @@ describe("dataset route authentication", () => {
 
     assert.deepEqual(
       responses.map((response) => response.status),
-      [401, 401, 401, 401, 401]
+      [401, 401, 401, 401, 401, 401]
     );
 
     for (const response of responses) {
