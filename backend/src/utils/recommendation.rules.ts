@@ -16,7 +16,8 @@ export type RecommendationCategory =
   | "revenue_improvement"
   | "product_demand"
   | "sales_trends"
-  | "category_performance";
+  | "category_performance"
+  | "marketing_analysis";
 
 export type RecommendationPriority = "low" | "medium" | "high";
 export type RecommendationBasis = "historical" | "forecast" | "historical_and_forecast";
@@ -75,6 +76,17 @@ export interface ProductForecastMetric {
   forecasts: Array<{ period: string; predictedQuantity: number }>;
 }
 
+export interface CampaignPeriodMetric {
+  campaignId: string;
+  campaignName: string;
+  activePeriodDays: number;
+  priorPeriodCovered: boolean;
+  priorPeriodRevenue: number;
+  activePeriodRevenue: number;
+  activePeriodTransactions: number;
+  explicitlyLinkedSalesRecords: number;
+}
+
 export interface RecommendationInputs {
   datasetId?: string;
   periods: PeriodMetric[];
@@ -84,6 +96,7 @@ export interface RecommendationInputs {
   productPeriods: ProductPeriodMetric[];
   categoryPeriods: CategoryPeriodMetric[];
   productForecasts: ProductForecastMetric[];
+  campaignPeriods?: CampaignPeriodMetric[];
   aggregation: "daily" | "monthly";
 }
 
@@ -113,7 +126,11 @@ function buildRecommendation(
     ...recommendation,
     id: stableId(
       recommendation.title,
-      String(recommendation.evidence.subject ?? recommendation.category),
+      String(
+        recommendation.evidence.campaignId ??
+          recommendation.evidence.subject ??
+          recommendation.category
+      ),
       inputs.datasetId
     ),
     datasetId: inputs.datasetId ?? null,
@@ -385,6 +402,46 @@ export function generateRecommendations(
     const baseline = observedProductMeans.get(product.productName.toLowerCase());
     if (baseline === undefined || baseline <= 0) {
       continue;
+    }
+
+    for (const campaign of inputs.campaignPeriods ?? []) {
+      if (
+        !campaign.priorPeriodCovered ||
+        campaign.priorPeriodRevenue < RECOMMENDATION_RULES.minimumPriorValue
+      ) {
+        continue;
+      }
+      const changePercent = percentChange(
+        campaign.priorPeriodRevenue,
+        campaign.activePeriodRevenue
+      );
+      if (Math.abs(changePercent) < RECOMMENDATION_RULES.declinePercent) {
+        continue;
+      }
+
+      recommendations.push(
+        buildRecommendation(inputs, {
+          title: `Investigate the sales change during ${campaign.campaignName}`,
+          category: "marketing_analysis",
+          priority: "low",
+          recommendation:
+            "Review stock availability, operating conditions, and campaign execution before deciding whether to repeat or change the promotion.",
+          explanation:
+            "Recorded revenue differed from the preceding equal-length period while this campaign was active. This is a period-based association, not evidence that the campaign caused the change or generated the sales.",
+          evidence: {
+            subject: campaign.campaignName,
+            campaignId: campaign.campaignId,
+            activePeriodDays: campaign.activePeriodDays,
+            precedingPeriodRevenue: round(campaign.priorPeriodRevenue),
+            activePeriodRevenue: round(campaign.activePeriodRevenue),
+            activePeriodTransactions: campaign.activePeriodTransactions,
+            changePercent: round(changePercent),
+            thresholdPercent: RECOMMENDATION_RULES.declinePercent,
+            explicitlyLinkedSalesRecords: campaign.explicitlyLinkedSalesRecords,
+          },
+          basis: "historical",
+        })
+      );
     }
 
     const forecastMean =

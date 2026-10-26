@@ -40,12 +40,15 @@ describe("analytics route authentication", () => {
         "categories",
         "sales-trends",
         "daily-summary",
+        "campaigns",
+        "customers",
+        "products/catalog",
       ].map((endpoint) => fetch(`${baseUrl}/${endpoint}`)),
     );
 
     assert.deepEqual(
       responses.map((response) => response.status),
-      [401, 401, 401, 401, 401],
+      [401, 401, 401, 401, 401, 401, 401, 401],
     );
   });
 });

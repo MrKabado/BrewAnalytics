@@ -8,6 +8,7 @@ import {
 import { forecastProductDemand } from "./forecast.service";
 import { completeCalendarSeries } from "../utils/forecasting";
 import type { EvaluationFilters } from "../utils/forecast.query";
+import { getCampaignPeriodAnalytics } from "./business-analytics.service";
 import {
   generateRecommendations,
   summarizeRecommendations,
@@ -178,7 +179,7 @@ export async function getBusinessRecommendations(
     horizon: filters.aggregation === "monthly" ? 6 : 7,
     topN: 100,
   };
-  const [salesTrend, productPerformance, categoryPerformance, productForecast, productPeriods, categoryPeriods] =
+  const [salesTrend, productPerformance, categoryPerformance, productForecast, productPeriods, categoryPeriods, campaignAnalytics] =
     await Promise.all([
       getSalesTrends(filters),
       getProductPerformance({ ...filters, topN: 100 }),
@@ -186,6 +187,7 @@ export async function getBusinessRecommendations(
       forecastProductDemand(productFilters),
       getProductPeriodMetrics(filters),
       getCategoryPeriodMetrics(filters),
+      getCampaignPeriodAnalytics(filters.datasetId, false),
     ]);
   const salesPeriods = completeCalendarSeries(
     salesTrend.trends.map((trend) => ({
@@ -210,6 +212,30 @@ export async function getBusinessRecommendations(
     productPeriods,
     categoryPeriods,
     productForecasts: productForecast.products,
+    campaignPeriods: campaignAnalytics.campaigns
+      .filter((campaign) => {
+        const startDate = campaign.startDate;
+        const endDate = campaign.endDate;
+        return (
+          (!filters.startDate ||
+            endDate >= filters.startDate.toISOString().slice(0, 10)) &&
+          (!filters.endDate ||
+            startDate <= filters.endDate.toISOString().slice(0, 10))
+        );
+      })
+      .map((campaign) => ({
+        campaignId: campaign.campaignId,
+        campaignName: campaign.campaignName,
+        activePeriodDays: campaign.activePeriod.days,
+        priorPeriodCovered:
+          campaign.priorComparablePeriod.coveredByObservedHistory,
+        priorPeriodRevenue: Number(campaign.priorComparablePeriod.revenue),
+        activePeriodRevenue: Number(campaign.activePeriod.revenue),
+        activePeriodTransactions:
+          campaign.activePeriod.distinctTransactions,
+        explicitlyLinkedSalesRecords:
+          campaign.explicitCampaignLinkedSales.salesRecordCount,
+      })),
   });
 }
 

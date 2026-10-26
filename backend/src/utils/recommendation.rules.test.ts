@@ -82,6 +82,66 @@ function recommendationInputs(): RecommendationInputs {
 }
 
 describe("business recommendation rules", () => {
+  it("surfaces campaign-period changes as cautious investigations, not causal claims", () => {
+    const recommendations = generateRecommendations({
+      ...recommendationInputs(),
+      campaignPeriods: [
+        {
+          campaignId: "CAM-1",
+          campaignName: "Weekend offer",
+          activePeriodDays: 2,
+          priorPeriodCovered: true,
+          priorPeriodRevenue: 100,
+          activePeriodRevenue: 150,
+          activePeriodTransactions: 12,
+          explicitlyLinkedSalesRecords: 1,
+        },
+      ],
+    });
+    const campaignRecommendation = recommendations.find(
+      (item) => item.category === "marketing_analysis"
+    );
+
+    assert.ok(campaignRecommendation);
+    assert.equal(campaignRecommendation.priority, "low");
+    assert.equal(campaignRecommendation.evidence.changePercent, 50);
+    assert.equal(campaignRecommendation.evidence.explicitlyLinkedSalesRecords, 1);
+    assert.match(campaignRecommendation.explanation, /not evidence that the campaign caused/);
+  });
+
+  it("does not compare campaigns without a covered prior period or sufficient baseline revenue", () => {
+    const recommendations = generateRecommendations({
+      ...recommendationInputs(),
+      campaignPeriods: [
+        {
+          campaignId: "CAM-1",
+          campaignName: "Weekend offer",
+          activePeriodDays: 2,
+          priorPeriodCovered: false,
+          priorPeriodRevenue: 100,
+          activePeriodRevenue: 250,
+          activePeriodTransactions: 12,
+          explicitlyLinkedSalesRecords: 0,
+        },
+        {
+          campaignId: "CAM-2",
+          campaignName: "Quiet offer",
+          activePeriodDays: 2,
+          priorPeriodCovered: true,
+          priorPeriodRevenue: 4,
+          activePeriodRevenue: 50,
+          activePeriodTransactions: 2,
+          explicitlyLinkedSalesRecords: 0,
+        },
+      ],
+    });
+
+    assert.equal(
+      recommendations.some((item) => item.category === "marketing_analysis"),
+      false
+    );
+  });
+
   it("recommends high-performing products with historical supporting metrics", () => {
     const recommendations = generateRecommendations(recommendationInputs());
     const highPerformer = recommendations.find(

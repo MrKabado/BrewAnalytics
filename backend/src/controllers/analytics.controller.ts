@@ -8,6 +8,11 @@ import {
   getSalesTrends,
 } from "../services/analytics.service";
 import {
+  getCampaignPeriodAnalytics,
+  getCustomerPurchaseAnalytics,
+  getProductCatalogPerformance,
+} from "../services/business-analytics.service";
+import {
   parseAnalyticsFilters,
   parseProductFilters,
   parseSalesTrendFilters,
@@ -104,6 +109,7 @@ export async function dailySalesSummary(req: Request, res: Response) {
         "aggregation must be 'daily' for the daily sales summary.",
       );
     }
+
     const summary = await getDailySalesSummary(filters);
 
     return res.status(200).json({
@@ -112,5 +118,47 @@ export async function dailySalesSummary(req: Request, res: Response) {
     });
   } catch (error) {
     return handleAnalyticsError(error, res, "daily sales summary");
+  }
+}
+
+export async function campaignPeriodAnalytics(req: Request, res: Response) {
+  try {
+    const filters = parseAnalyticsFilters(req.query);
+    const analytics = await getCampaignPeriodAnalytics(filters.datasetId);
+
+    return res.status(200).json({
+      status: "success",
+      ...analytics,
+    });
+  } catch (error) {
+    return handleAnalyticsError(error, res, "campaign period analytics");
+  }
+}
+
+export async function customerPurchaseAnalytics(req: Request, res: Response) {
+  try {
+    const filters = parseAnalyticsFilters(req.query);
+    const analytics = await getCustomerPurchaseAnalytics(filters.datasetId);
+
+    return res.status(200).json({
+      status: "success",
+      ...analytics,
+    });
+  } catch (error) {
+    return handleAnalyticsError(error, res, "customer purchase analytics");
+  }
+}
+
+export async function productCatalogAnalytics(req: Request, res: Response) {
+  try {
+    const filters = parseAnalyticsFilters(req.query);
+    const analytics = await getProductCatalogPerformance(filters.datasetId);
+
+    return res.status(200).json({
+      status: "success",
+      ...analytics,
+    });
+  } catch (error) {
+    return handleAnalyticsError(error, res, "product catalog analytics");
   }
 }

@@ -1,7 +1,10 @@
 import { Router } from "express";
 import {
   categoryPerformance,
+  campaignPeriodAnalytics,
+  customerPurchaseAnalytics,
   dailySalesSummary,
+  productCatalogAnalytics,
   productPerformance,
   salesOverview,
   salesTrends,
@@ -15,9 +18,12 @@ const router = Router();
 router.use(requireAuth);
 router.get("/overview", salesOverview);
 router.get("/products", productPerformance);
+router.get("/products/catalog", productCatalogAnalytics);
 router.get("/categories", categoryPerformance);
 router.get("/sales-trends", salesTrends);
 router.get("/daily-summary", dailySalesSummary);
+router.get("/campaigns", campaignPeriodAnalytics);
+router.get("/customers", customerPurchaseAnalytics);
 router.use("/forecasts", forecastRoutes);
 router.use("/recommendations", recommendationRoutes);
 
