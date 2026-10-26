@@ -125,8 +125,20 @@ export async function getDatasetRecords(
 
 export async function deleteDataset(id: string) {
   try {
-    await prisma.dataset.delete({ where: { id } });
-    return true;
+    return await prisma.$transaction(async (transaction) => {
+      const dataset = await transaction.dataset.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (!dataset) {
+        return false;
+      }
+
+      await transaction.salesRecord.deleteMany({ where: { datasetId: id } });
+      await transaction.dataset.delete({ where: { id } });
+      return true;
+    });
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

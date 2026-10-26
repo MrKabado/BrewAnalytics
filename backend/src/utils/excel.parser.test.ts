@@ -13,6 +13,7 @@ import {
   inspectSalesExcel,
   parseSalesExcel,
 } from "./excel.parser";
+import { validateSalesRows } from "./dataset.validation";
 
 const headers = [
   "transactionId",
@@ -54,6 +55,10 @@ describe("Excel sales parser", () => {
 
     assert.equal(parseSalesCsv(csv)[0].transactionId, "T1");
     assert.throws(() => parseSalesCsv("not,a,sales,csv"), CsvParseError);
+    assert.equal(
+      validateSalesRows(parseSalesCsv(csv))[0].totalAmount.toFixed(2),
+      "2.50"
+    );
   });
 
   for (const bookType of ["xlsx", "xls"] as const) {

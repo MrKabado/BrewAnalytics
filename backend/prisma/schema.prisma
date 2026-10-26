@@ -16,6 +16,12 @@ enum UserRole {
   ADMIN
 }
 
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -28,30 +34,101 @@ model User {
 }
 
 model Dataset {
-  id               String        @id @default(cuid())
+  id               String              @id @default(cuid())
   name             String
   originalFileName String
-  rowCount         Int           @default(0)
-  uploadedAt       DateTime      @default(now())
+  rowCount         Int                 @default(0)
+  uploadedAt       DateTime            @default(now())
   records          SalesRecord[]
+  products         Product[]
+  customers        Customer[]
+  campaigns        MarketingCampaign[]
 }
 
 model SalesRecord {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   datasetId     String
   transactionId String
-  saleDate      DateTime @db.Date
+  saleDate      DateTime  @db.Date
+  /// Optional local business timestamp; saleDate remains the analytics grouping date.
+  saleDateTime  DateTime? @db.Timestamp(3)
+  productId     String?
+  customerId    String?
+  campaignId    String?
   productName   String
   category      String
   quantity      Int
-  unitPrice     Decimal  @db.Decimal(12, 2)
-  totalAmount   Decimal  @db.Decimal(12, 2)
+  /// Price snapshots preserve the values recorded when this line was sold.
+  unitPrice     Decimal   @db.Decimal(12, 2)
+  unitCost      Decimal?  @db.Decimal(12, 2)
+  totalAmount   Decimal   @db.Decimal(12, 2)
   paymentMethod String
 
-  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  dataset  Dataset            @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  product  Product?           @relation(fields: [datasetId, productId], references: [datasetId, productId], onDelete: NoAction, onUpdate: Cascade)
+  customer Customer?          @relation(fields: [datasetId, customerId], references: [datasetId, customerId], onDelete: NoAction, onUpdate: Cascade)
+  campaign MarketingCampaign? @relation(fields: [datasetId, campaignId], references: [datasetId, campaignId], onDelete: NoAction, onUpdate: Cascade)
 
   @@index([datasetId])
   @@index([saleDate])
   @@index([productName])
   @@index([category])
+  @@index([datasetId, productId])
+  @@index([datasetId, customerId])
+  @@index([datasetId, campaignId])
+}
+
+model Product {
+  datasetId   String
+  /// Source identifier, unique within its dataset.
+  productId   String
+  productName String
+  category    String
+  unitPrice   Decimal       @db.Decimal(12, 2)
+  unitCost    Decimal?      @db.Decimal(12, 2)
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  dataset      Dataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  salesRecords SalesRecord[]
+
+  @@id([datasetId, productId])
+  @@index([datasetId, category])
+  @@index([datasetId, productName])
+}
+
+model Customer {
+  datasetId        String
+  /// Synthetic source identifier, unique within its dataset; no direct PII is stored.
+  customerId       String
+  customerType     String
+  ageGroup         String
+  gender           String?
+  registrationDate DateTime @db.Date
+
+  dataset      Dataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  salesRecords SalesRecord[]
+
+  @@id([datasetId, customerId])
+  @@index([datasetId, customerType])
+}
+
+model MarketingCampaign {
+  datasetId          String
+  /// Source identifier, unique within its dataset.
+  campaignId         String
+  campaignName       String
+  promotionType      String
+  startDate          DateTime @db.Date
+  endDate            DateTime @db.Date
+  marketingCost      Decimal  @db.Decimal(12, 2)
+  discountPercentage Decimal  @db.Decimal(5, 2)
+  campaignChannel    String
+
+  dataset      Dataset       @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  salesRecords SalesRecord[]
+
+  @@id([datasetId, campaignId])
+  @@index([datasetId, startDate, endDate])
 }
