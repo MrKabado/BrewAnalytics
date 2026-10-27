@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { ArrowDownRight, ArrowUpRight, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { formatCurrency } from "@/lib/format"
 
 export function PageHeading({
   eyebrow,
@@ -184,7 +185,9 @@ export function RevenueChart({
   )
   const gridValues = [0, 0.33, 0.66, 1].map((fraction) => maximum * fraction)
   const formatter = (value: number) =>
-    value >= 1000 ? `$${Math.round(value / 1000)}k` : `$${Math.round(value)}`
+    value >= 1000
+      ? `${formatCurrency(Math.round(value / 1000))}k`
+      : formatCurrency(Math.round(value))
 
   return (
     <div className={cn("w-full", className)}>

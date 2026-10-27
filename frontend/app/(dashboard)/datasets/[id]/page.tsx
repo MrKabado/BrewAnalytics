@@ -21,6 +21,7 @@ import { DatasetValidationPanel } from "@/components/datasets/dataset-validation
 import { WorkbookImportPanel } from "@/components/datasets/workbook-import-panel"
 import { useAnalyticsScope } from "@/components/analytics/analytics-scope"
 import { ApiError } from "@/lib/api-client"
+import { formatCurrency } from "@/lib/format"
 import { getDataset, listDatasetRecords } from "@/lib/dataset-service"
 import type {
   Dataset,
@@ -45,12 +46,7 @@ function formatDate(value: string) {
 
 function formatAmount(value: string) {
   const amount = Number(value)
-  return Number.isFinite(amount)
-    ? new Intl.NumberFormat(undefined, {
-        style: "currency",
-        currency: "USD",
-      }).format(amount)
-    : value
+  return Number.isFinite(amount) ? formatCurrency(amount) : value
 }
 
 function errorMessage(error: unknown) {

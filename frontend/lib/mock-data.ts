@@ -161,7 +161,7 @@ export const recommendationSamples = [
     category: "Product performance",
     priority: "High" as const,
     text: "It leads both unit sales and recorded revenue. Maintain visibility and monitor its performance as the menu changes.",
-    evidence: "1,248 units · $6,864 revenue · #1 by units",
+    evidence: "1,248 units · ₱6,864 revenue · #1 by units",
     basis: "Historical",
   },
   {
@@ -185,8 +185,8 @@ export const recommendationSamples = [
 ]
 
 export const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-US", {
+  new Intl.NumberFormat("en-PH", {
     style: "currency",
-    currency: "USD",
+    currency: "PHP",
     maximumFractionDigits: 0,
   }).format(value)
