@@ -1,5 +1,5 @@
 import path from "node:path";
-import { Prisma } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { prisma } from "../lib/prisma";
 import type { DatasetRecordFilters } from "../utils/dataset.query";
 import {
@@ -8,9 +8,12 @@ import {
 } from "../utils/dataset.validation";
 import type { SalesCsvRow } from "../utils/csv.parser";
 
+const SALES_RECORD_BATCH_SIZE = 2_000;
+
 export async function createDatasetFromCsv(
   fileName: string,
-  rows: SalesCsvRow[]
+  rows: SalesCsvRow[],
+  client: PrismaClient = prisma,
 ) {
   const records = validateSalesRows(rows);
   const originalFileName = path.basename(fileName);
@@ -20,24 +23,38 @@ export async function createDatasetFromCsv(
     throw new DatasetValidationError("The uploaded file must have a valid name.");
   }
 
-  return prisma.$transaction(async (transaction) => {
-    const dataset = await transaction.dataset.create({
-      data: {
-        name,
-        originalFileName,
-        rowCount: records.length,
-      },
-    });
+  return client.$transaction(
+    async (transaction) => {
+      const dataset = await transaction.dataset.create({
+        data: {
+          name,
+          originalFileName,
+          rowCount: records.length,
+        },
+      });
 
-    await transaction.salesRecord.createMany({
-      data: records.map((record) => ({
+      const salesRecords = records.map((record) => ({
         ...record,
         datasetId: dataset.id,
-      })),
-    });
+      }));
 
-    return dataset;
-  });
+      for (
+        let offset = 0;
+        offset < salesRecords.length;
+        offset += SALES_RECORD_BATCH_SIZE
+      ) {
+        await transaction.salesRecord.createMany({
+          data: salesRecords.slice(offset, offset + SALES_RECORD_BATCH_SIZE),
+        });
+      }
+
+      return dataset;
+    },
+    {
+      maxWait: 10_000,
+      timeout: 120_000,
+    },
+  );
 }
 
 export async function getDatasets(page: number, pageSize: number) {

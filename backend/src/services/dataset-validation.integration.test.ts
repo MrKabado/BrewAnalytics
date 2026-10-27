@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { getDailySalesSummary } from "./analytics.service";
+import { createDatasetFromCsv } from "./dataset.service";
 import { validateDataset } from "./dataset.validation.service";
 
 const testDatabaseUrl = process.env.DATABASE_URL_TEST;
@@ -81,6 +82,33 @@ describe(
         await prisma.dataset.deleteMany({ where: { id: datasetId } });
       }
       await prisma.$disconnect();
+    });
+
+    it("creates a dataset and inserts sales rows in batches", async () => {
+      if (!prisma) throw new Error("DATABASE_URL_TEST is not configured.");
+      const rows = Array.from({ length: 4_001 }, (_, index) => ({
+        transactionId: `UPLOAD-${index + 1}`,
+        saleDate: "2025-01-15",
+        productName: "House Coffee",
+        category: "Coffee",
+        quantity: "1",
+        unitPrice: "5.00",
+        totalAmount: "5.00",
+        paymentMethod: "Cash",
+      }));
+
+      const dataset = await createDatasetFromCsv(
+        "large-sales-upload.xlsx",
+        rows,
+        prisma,
+      );
+      datasetIds.push(dataset.id);
+
+      assert.equal(dataset.rowCount, rows.length);
+      assert.equal(
+        await prisma.salesRecord.count({ where: { datasetId: dataset.id } }),
+        rows.length,
+      );
     });
 
     it("aggregates daily revenue, units, distinct transactions, products, and averages", async () => {
